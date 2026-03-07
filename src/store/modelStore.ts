@@ -7,27 +7,29 @@ import {
   getModelManagerState,
   subscribeModelManager,
 } from '../ai/modelManager';
-import { getDefaultModelId } from '../ai/modelProfiles';
+import { STEP_MODEL } from '../ai/modelProfiles';
 
 interface ModelState {
   status: ModelStatus;
-  modelName: string | null;
+  modelName: string;
   loadTimeMs: number | null;
   error: string | null;
+  runtimeConnected: boolean;
   capabilities: DeviceCapabilities | null;
   capabilitiesLoading: boolean;
 
   detectCapabilities: () => Promise<void>;
-  loadModel: (modelId?: string) => Promise<void>;
+  loadModel: () => Promise<void>;
   unloadModel: () => void;
   initSubscription: () => () => void;
 }
 
 export const useModelStore = create<ModelState>((set) => ({
   status: 'not-loaded',
-  modelName: null,
+  modelName: STEP_MODEL.name,
   loadTimeMs: null,
   error: null,
+  runtimeConnected: false,
   capabilities: null,
   capabilitiesLoading: false,
 
@@ -37,9 +39,8 @@ export const useModelStore = create<ModelState>((set) => ({
     set({ capabilities, capabilitiesLoading: false });
   },
 
-  loadModel: async (modelId?: string) => {
-    const id = modelId ?? getDefaultModelId();
-    await loadModelManager(id);
+  loadModel: async () => {
+    await loadModelManager();
   },
 
   unloadModel: () => {
@@ -51,9 +52,10 @@ export const useModelStore = create<ModelState>((set) => ({
       const s = getModelManagerState();
       set({
         status: s.status,
-        modelName: s.activeModel?.name ?? null,
+        modelName: s.activeModel?.name ?? STEP_MODEL.name,
         loadTimeMs: s.loadTimeMs,
         error: s.error,
+        runtimeConnected: s.runtimeConnected,
       });
     };
     sync();

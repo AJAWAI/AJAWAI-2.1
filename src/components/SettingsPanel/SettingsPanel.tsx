@@ -1,6 +1,6 @@
 import { X } from 'lucide-react';
 import { useSettingsStore } from '../../store/settingsStore';
-import { MODEL_PROFILES } from '../../ai/modelProfiles';
+import { STEP_MODEL } from '../../ai/modelProfiles';
 import styles from './SettingsPanel.module.css';
 
 export function SettingsPanel() {
@@ -8,8 +8,6 @@ export function SettingsPanel() {
   const toggle = useSettingsStore((s) => s.toggleSettingsPanel);
   const maxTokens = useSettingsStore((s) => s.maxContextTokens);
   const setMaxTokens = useSettingsStore((s) => s.setMaxContextTokens);
-  const modelId = useSettingsStore((s) => s.modelId);
-  const setModelId = useSettingsStore((s) => s.setModelId);
 
   if (!open) return null;
 
@@ -25,17 +23,12 @@ export function SettingsPanel() {
 
         <div className={styles.section}>
           <label className={styles.label}>Model</label>
-          <select
-            className={styles.select}
-            value={modelId}
-            onChange={(e) => setModelId(e.target.value)}
-          >
-            {MODEL_PROFILES.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name} ({(m.sizeBytes / 1e9).toFixed(1)} GB)
-              </option>
-            ))}
-          </select>
+          <div className={styles.modelLocked}>
+            <span className={styles.modelName}>{STEP_MODEL.name}</span>
+            <span className={styles.modelMeta}>
+              {(STEP_MODEL.sizeBytes / 1e9).toFixed(1)} GB — sole LLM for AJAWAI 2.1
+            </span>
+          </div>
         </div>
 
         <div className={styles.section}>

@@ -22,13 +22,20 @@ export interface DeviceCapabilities {
   gpu: string | null;
 }
 
-export type ModelStatus = 'idle' | 'loading' | 'ready' | 'error' | 'not-loaded';
+export type ModelStatus =
+  | 'not-loaded'
+  | 'runtime-unavailable'
+  | 'loading'
+  | 'ready'
+  | 'generating'
+  | 'error';
 
 export interface ModelInfo {
   name: string;
   status: ModelStatus;
   sizeBytes: number | null;
   loadTimeMs: number | null;
+  runtimeConnected: boolean;
 }
 
 export interface MemoryEntry {
@@ -50,4 +57,5 @@ export interface PipelineMetrics {
   generationLatencyMs: number | null;
   memoryRetrievalMs: number | null;
   totalLatencyMs: number | null;
+  generationSource: 'step' | 'unavailable';
 }

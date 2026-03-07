@@ -1,6 +1,6 @@
 import type { Message, MemoryEntry } from '../lib/types';
 
-const SYSTEM_PROMPT = `You are AJAWAI, a helpful, concise, and friendly AI assistant. You run locally on the user's device. Be direct and efficient in your responses.`;
+const SYSTEM_PROMPT = `You are AJAWAI 2.1, powered by STEP-3-VL-10B. You are a helpful, concise, and friendly AI assistant running locally on the user's device. Be direct and efficient in your responses.`;
 
 export interface BuiltPrompt {
   text: string;

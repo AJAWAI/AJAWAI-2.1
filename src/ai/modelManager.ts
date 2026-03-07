@@ -1,11 +1,13 @@
 import type { ModelStatus } from '../lib/types';
-import { getModelProfile, type ModelProfile } from './modelProfiles';
+import { STEP_MODEL, type ModelProfile } from './modelProfiles';
+import { STEP_RUNTIME_CONNECTED } from './browserLocalAdapter';
 
 export interface ModelManagerState {
   status: ModelStatus;
   activeModel: ModelProfile | null;
   loadTimeMs: number | null;
   error: string | null;
+  runtimeConnected: boolean;
 }
 
 let state: ModelManagerState = {
@@ -13,6 +15,7 @@ let state: ModelManagerState = {
   activeModel: null,
   loadTimeMs: null,
   error: null,
+  runtimeConnected: STEP_RUNTIME_CONNECTED,
 };
 
 type Listener = (s: ModelManagerState) => void;
@@ -31,10 +34,15 @@ export function subscribeModelManager(fn: Listener): () => void {
   return () => listeners.delete(fn);
 }
 
-export async function loadModel(modelId: string): Promise<void> {
-  const profile = getModelProfile(modelId);
-  if (!profile) {
-    state = { ...state, status: 'error', error: `Unknown model: ${modelId}` };
+export async function loadModel(): Promise<void> {
+  if (!STEP_RUNTIME_CONNECTED) {
+    state = {
+      status: 'runtime-unavailable',
+      activeModel: STEP_MODEL,
+      loadTimeMs: null,
+      error: 'STEP-3-VL-10B runtime is not connected yet.',
+      runtimeConnected: false,
+    };
     notify();
     return;
   }
@@ -45,20 +53,21 @@ export async function loadModel(modelId: string): Promise<void> {
   const start = performance.now();
 
   try {
-    await new Promise((r) => setTimeout(r, 1500 + Math.random() * 1000));
+    // When runtime is wired, actual STEP loading logic goes here
     const loadTimeMs = performance.now() - start;
 
     state = {
       status: 'ready',
-      activeModel: profile,
+      activeModel: STEP_MODEL,
       loadTimeMs,
       error: null,
+      runtimeConnected: true,
     };
   } catch (e) {
     state = {
       ...state,
       status: 'error',
-      error: e instanceof Error ? e.message : 'Failed to load model',
+      error: e instanceof Error ? e.message : 'Failed to load STEP-3-VL-10B',
     };
   }
 
@@ -66,6 +75,12 @@ export async function loadModel(modelId: string): Promise<void> {
 }
 
 export function unloadModel(): void {
-  state = { status: 'not-loaded', activeModel: null, loadTimeMs: null, error: null };
+  state = {
+    status: 'not-loaded',
+    activeModel: null,
+    loadTimeMs: null,
+    error: null,
+    runtimeConnected: STEP_RUNTIME_CONNECTED,
+  };
   notify();
 }

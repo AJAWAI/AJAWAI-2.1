@@ -33,7 +33,17 @@
   color: var(--color-text-secondary);
   font-size: 15px;
   margin-top: 4px;
-  margin-bottom: 32px;
+  margin-bottom: 16px;
+}
+
+.runtimeNotice {
+  font-size: 13px;
+  color: #9a3412;
+  background: #fce8db;
+  padding: 8px 16px;
+  border-radius: var(--radius-md);
+  margin-bottom: 24px;
+  line-height: 1.5;
 }
 
 .features {

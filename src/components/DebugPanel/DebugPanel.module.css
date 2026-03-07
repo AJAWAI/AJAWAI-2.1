@@ -80,6 +80,27 @@
   color: #dc2626;
 }
 
+.statusBadge[data-status='runtime-unavailable'] {
+  color: #9a3412;
+}
+
+.statusBadge[data-status='generating'] {
+  color: #b45309;
+}
+
+.warn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #9a3412;
+  font-weight: 500;
+}
+
+.errorText {
+  color: #dc2626;
+  font-size: 11px;
+}
+
 .spin {
   animation: spin 1s linear infinite;
 }

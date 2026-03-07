@@ -59,7 +59,7 @@ export function MessageComposer() {
           <Send size={18} />
         </button>
       </div>
-      <p className={styles.hint}>AJAWAI 2.1 — Local AI Assistant</p>
+      <p className={styles.hint}>AJAWAI 2.1 — Powered by STEP-3-VL-10B</p>
     </div>
   );
 }
