@@ -1,7 +1,8 @@
 import { STEP_TARGET } from './modelProfiles';
-import type { RuntimeBackend, ConnectionDiagnostics } from './runtimeTypes';
+import type { RuntimeBackend, RuntimeId, ConnectionDiagnostics } from './runtimeTypes';
 import { emptyDiagnostics } from './runtimeTypes';
 import { WebLLMRuntime } from './webllmRuntime';
+import { WllamaRuntime } from './wllamaRuntime';
 
 export interface GenerationConfig {
   maxOutputTokens: number;
@@ -24,9 +25,22 @@ export interface InferenceResult {
 }
 
 let activeRuntime: RuntimeBackend | null = null;
+let selectedRuntimeId: RuntimeId = 'wllama';
 
-export function createRuntime(): RuntimeBackend {
+export function createRuntime(id?: RuntimeId, ggufVariant?: string): RuntimeBackend {
+  const runtimeId = id ?? selectedRuntimeId;
+  if (runtimeId === 'wllama') {
+    return new WllamaRuntime(ggufVariant);
+  }
   return new WebLLMRuntime();
+}
+
+export function getSelectedRuntimeId(): RuntimeId {
+  return selectedRuntimeId;
+}
+
+export function setSelectedRuntimeId(id: RuntimeId): void {
+  selectedRuntimeId = id;
 }
 
 export function getActiveRuntime(): RuntimeBackend | null {
@@ -38,7 +52,7 @@ export function setActiveRuntime(runtime: RuntimeBackend | null): void {
 }
 
 export function getRuntimeDiagnostics(): ConnectionDiagnostics {
-  return activeRuntime?.getDiagnostics() ?? emptyDiagnostics('webllm');
+  return activeRuntime?.getDiagnostics() ?? emptyDiagnostics(selectedRuntimeId);
 }
 
 export async function runStepInference(
@@ -51,7 +65,7 @@ export async function runStepInference(
     const diag = getRuntimeDiagnostics();
     const reason = diag.failureReason
       ? `Connection failed at ${diag.failureStage}: ${diag.failureReason}`
-      : 'STEP runtime not connected. Use the debug panel to attempt connection.';
+      : `STEP runtime not connected (${selectedRuntimeId}). Use the debug panel to attempt connection.`;
 
     return {
       text: reason,

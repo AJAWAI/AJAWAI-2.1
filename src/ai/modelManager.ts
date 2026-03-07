@@ -1,11 +1,12 @@
 import type { ModelStatus } from '../lib/types';
 import { STEP_TARGET, type DeploymentTarget } from './modelProfiles';
-import type { ConnectionDiagnostics } from './runtimeTypes';
+import type { ConnectionDiagnostics, RuntimeId } from './runtimeTypes';
 import { emptyDiagnostics } from './runtimeTypes';
 import {
   createRuntime,
   getActiveRuntime,
   setActiveRuntime,
+  getSelectedRuntimeId,
 } from './browserLocalAdapter';
 
 export interface ModelManagerState {
@@ -15,6 +16,7 @@ export interface ModelManagerState {
   error: string | null;
   runtimeConnected: boolean;
   diagnostics: ConnectionDiagnostics;
+  selectedRuntime: RuntimeId;
 }
 
 let state: ModelManagerState = {
@@ -23,7 +25,8 @@ let state: ModelManagerState = {
   loadTimeMs: null,
   error: null,
   runtimeConnected: false,
-  diagnostics: emptyDiagnostics('webllm'),
+  diagnostics: emptyDiagnostics(getSelectedRuntimeId()),
+  selectedRuntime: getSelectedRuntimeId(),
 };
 
 type Listener = (s: ModelManagerState) => void;
@@ -42,16 +45,19 @@ export function subscribeModelManager(fn: Listener): () => void {
   return () => listeners.delete(fn);
 }
 
-export async function loadModel(): Promise<void> {
+export async function loadModel(ggufVariant?: string): Promise<void> {
+  const runtimeId = getSelectedRuntimeId();
   state = {
     ...state,
     status: 'loading',
     error: null,
     activeTarget: STEP_TARGET,
+    selectedRuntime: runtimeId,
+    diagnostics: emptyDiagnostics(runtimeId),
   };
   notify();
 
-  const runtime = createRuntime();
+  const runtime = createRuntime(runtimeId, ggufVariant);
   const start = performance.now();
 
   try {
@@ -67,6 +73,7 @@ export async function loadModel(): Promise<void> {
       error: null,
       runtimeConnected: true,
       diagnostics: runtime.getDiagnostics(),
+      selectedRuntime: runtimeId,
     };
   } catch (e) {
     setActiveRuntime(null);
@@ -80,6 +87,7 @@ export async function loadModel(): Promise<void> {
       error: errorMsg,
       runtimeConnected: false,
       diagnostics: diag,
+      selectedRuntime: runtimeId,
     };
   }
 
@@ -93,13 +101,15 @@ export async function unloadModel(): Promise<void> {
     setActiveRuntime(null);
   }
 
+  const runtimeId = getSelectedRuntimeId();
   state = {
     status: 'not-loaded',
     activeTarget: null,
     loadTimeMs: null,
     error: null,
     runtimeConnected: false,
-    diagnostics: emptyDiagnostics('webllm'),
+    diagnostics: emptyDiagnostics(runtimeId),
+    selectedRuntime: runtimeId,
   };
   notify();
 }

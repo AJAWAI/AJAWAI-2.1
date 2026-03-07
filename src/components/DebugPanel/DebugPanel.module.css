@@ -152,4 +152,44 @@
   font-size: 11px;
   line-height: 1.5;
   word-break: break-word;
+  white-space: pre-line;
+}
+
+.runtimePicker {
+  display: flex;
+  gap: 6px;
+}
+
+.runtimeBtn {
+  flex: 1;
+  padding: 6px 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-secondary);
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  transition: all var(--transition-fast);
+}
+
+.runtimeBtn:not(:disabled):hover {
+  border-color: var(--color-mint);
+  color: var(--color-mint-dark);
+}
+
+.runtimeBtnActive {
+  border-color: var(--color-mint);
+  background: #e6f9f1;
+  color: var(--color-mint-dark);
+}
+
+.runtimeBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.artifactRow {
+  font-size: 11px;
+  padding: 1px 0;
+  line-height: 1.4;
 }
