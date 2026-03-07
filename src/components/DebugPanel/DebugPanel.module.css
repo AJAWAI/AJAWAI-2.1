@@ -142,3 +142,14 @@
 .actionBtnSecondary:hover {
   background: var(--color-border);
 }
+
+.failureBox {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: #fee2e2;
+  border-radius: var(--radius-sm);
+  color: #991b1b;
+  font-size: 11px;
+  line-height: 1.5;
+  word-break: break-word;
+}

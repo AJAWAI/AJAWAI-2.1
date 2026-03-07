@@ -45,7 +45,7 @@ export function SettingsPanel() {
           <div className={styles.configGrid}>
             <span>RAM</span><span>{STEP_TARGET.recommendedDeviceTier}</span>
             <span>Runtime</span><span>~{STEP_TARGET.estimatedRuntimeMemoryGB} GB</span>
-            <span>Browser</span><span>{STEP_TARGET.requiresWebGPU ? 'WebGPU required' : 'WASM'}</span>
+            <span>Runtime</span><span>{STEP_TARGET.preferredRuntime}</span>
           </div>
         </div>
       </div>

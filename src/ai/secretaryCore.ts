@@ -4,7 +4,6 @@ import { buildPrompt } from './promptBuilder';
 import { runStepInference, MOBILE_GENERATION_CONFIG } from './browserLocalAdapter';
 import { analyzeIntent } from './picoClaw';
 import { routeToolCall } from './toolRouter';
-import { getModelManagerState } from './modelManager';
 
 export interface PipelineResult {
   response: string;
@@ -45,9 +44,6 @@ export async function runPipeline(
   const memoryRetrievalMs = performance.now() - memStart;
 
   const prompt = buildPrompt(messages, memoryEntries);
-
-  const modelState = getModelManagerState();
-  void modelState;
 
   const result = await runStepInference(prompt.text, MOBILE_GENERATION_CONFIG);
 

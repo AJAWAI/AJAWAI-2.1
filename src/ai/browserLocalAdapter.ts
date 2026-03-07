@@ -1,4 +1,7 @@
 import { STEP_TARGET } from './modelProfiles';
+import type { RuntimeBackend, ConnectionDiagnostics } from './runtimeTypes';
+import { emptyDiagnostics } from './runtimeTypes';
+import { WebLLMRuntime } from './webllmRuntime';
 
 export interface GenerationConfig {
   maxOutputTokens: number;
@@ -20,7 +23,23 @@ export interface InferenceResult {
   source: 'step' | 'unavailable';
 }
 
-export const STEP_RUNTIME_CONNECTED = false;
+let activeRuntime: RuntimeBackend | null = null;
+
+export function createRuntime(): RuntimeBackend {
+  return new WebLLMRuntime();
+}
+
+export function getActiveRuntime(): RuntimeBackend | null {
+  return activeRuntime;
+}
+
+export function setActiveRuntime(runtime: RuntimeBackend | null): void {
+  activeRuntime = runtime;
+}
+
+export function getRuntimeDiagnostics(): ConnectionDiagnostics {
+  return activeRuntime?.getDiagnostics() ?? emptyDiagnostics('webllm');
+}
 
 export async function runStepInference(
   prompt: string,
@@ -28,20 +47,31 @@ export async function runStepInference(
 ): Promise<InferenceResult> {
   const start = performance.now();
 
-  if (!STEP_RUNTIME_CONNECTED) {
-    void prompt;
-    void config;
+  if (!activeRuntime || activeRuntime.getDiagnostics().stage !== 'ready') {
+    const diag = getRuntimeDiagnostics();
+    const reason = diag.failureReason
+      ? `Connection failed at ${diag.failureStage}: ${diag.failureReason}`
+      : 'STEP runtime not connected. Use the debug panel to attempt connection.';
+
     return {
-      text: `STEP-3-VL-10B (${STEP_TARGET.quantization}, ${STEP_TARGET.contextWindow} ctx) runtime is not connected yet. The browser adapter is under development.`,
+      text: reason,
       latencyMs: performance.now() - start,
       source: 'unavailable',
     };
   }
 
-  void prompt;
-  return {
-    text: '',
-    latencyMs: performance.now() - start,
-    source: 'step',
-  };
+  try {
+    const text = await activeRuntime.generate(prompt, config.maxOutputTokens, config.temperature);
+    return {
+      text,
+      latencyMs: performance.now() - start,
+      source: 'step',
+    };
+  } catch (e) {
+    return {
+      text: `Generation error: ${e instanceof Error ? e.message : String(e)}`,
+      latencyMs: performance.now() - start,
+      source: 'unavailable',
+    };
+  }
 }
