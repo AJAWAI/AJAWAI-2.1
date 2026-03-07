@@ -53,7 +53,7 @@ export default defineConfig({
       output: {
         manualChunks: {
           'webllm': ['@mlc-ai/web-llm'],
-          'wllama': ['@wllama/wllama'],
+          'wllama': ['@wllama/wllama/esm'],
         },
       },
     },

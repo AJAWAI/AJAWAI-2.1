@@ -140,9 +140,8 @@ export class WllamaRuntime implements RuntimeBackend {
     type WllamaConstructor = new (configPaths: Record<string, string>) => WllamaInstance;
     let WllamaClass: WllamaConstructor;
     try {
-      // Dynamic import avoids tsc processing the raw .ts source in @wllama/wllama
-      const mod = await (Function('return import("@wllama/wllama")')() as Promise<{ Wllama: WllamaConstructor }>);
-      WllamaClass = mod.Wllama;
+      const mod = await import('@wllama/wllama/esm');
+      WllamaClass = (mod as unknown as { Wllama: WllamaConstructor }).Wllama;
     } catch (e) {
       const reason = `Failed to load wllama runtime: ${e instanceof Error ? e.message : String(e)}`;
       this.diag = { ...this.diag, failureReason: reason, failureStage: 'downloading', stage: 'failed' };
