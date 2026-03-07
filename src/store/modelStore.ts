@@ -7,11 +7,13 @@ import {
   getModelManagerState,
   subscribeModelManager,
 } from '../ai/modelManager';
-import { STEP_MODEL } from '../ai/modelProfiles';
+import { STEP_TARGET } from '../ai/modelProfiles';
 
 interface ModelState {
   status: ModelStatus;
   modelName: string;
+  quantization: string;
+  contextWindow: number;
   loadTimeMs: number | null;
   error: string | null;
   runtimeConnected: boolean;
@@ -26,7 +28,9 @@ interface ModelState {
 
 export const useModelStore = create<ModelState>((set) => ({
   status: 'not-loaded',
-  modelName: STEP_MODEL.name,
+  modelName: STEP_TARGET.modelName,
+  quantization: STEP_TARGET.quantization,
+  contextWindow: STEP_TARGET.contextWindow,
   loadTimeMs: null,
   error: null,
   runtimeConnected: false,
@@ -52,7 +56,9 @@ export const useModelStore = create<ModelState>((set) => ({
       const s = getModelManagerState();
       set({
         status: s.status,
-        modelName: s.activeModel?.name ?? STEP_MODEL.name,
+        modelName: s.activeTarget?.modelName ?? STEP_TARGET.modelName,
+        quantization: s.activeTarget?.quantization ?? STEP_TARGET.quantization,
+        contextWindow: s.activeTarget?.contextWindow ?? STEP_TARGET.contextWindow,
         loadTimeMs: s.loadTimeMs,
         error: s.error,
         runtimeConnected: s.runtimeConnected,

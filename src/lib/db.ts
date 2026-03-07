@@ -10,7 +10,11 @@ interface AjawaiDB extends DBSchema {
   memory: {
     key: string;
     value: MemoryEntry;
-    indexes: { 'by-conversation': string };
+    indexes: {
+      'by-conversation': string;
+      'by-category': string;
+      'by-timestamp': number;
+    };
   };
 }
 
@@ -18,13 +22,22 @@ let dbPromise: Promise<IDBPDatabase<AjawaiDB>> | null = null;
 
 function getDB() {
   if (!dbPromise) {
-    dbPromise = openDB<AjawaiDB>('ajawai-db', 1, {
-      upgrade(db) {
-        const convStore = db.createObjectStore('conversations', { keyPath: 'id' });
-        convStore.createIndex('by-updated', 'updatedAt');
+    dbPromise = openDB<AjawaiDB>('ajawai-db', 2, {
+      upgrade(db, oldVersion) {
+        if (oldVersion < 1) {
+          const convStore = db.createObjectStore('conversations', { keyPath: 'id' });
+          convStore.createIndex('by-updated', 'updatedAt');
+        }
 
-        const memStore = db.createObjectStore('memory', { keyPath: 'id' });
-        memStore.createIndex('by-conversation', 'conversationId');
+        if (oldVersion < 2) {
+          if (db.objectStoreNames.contains('memory')) {
+            db.deleteObjectStore('memory');
+          }
+          const memStore = db.createObjectStore('memory', { keyPath: 'id' });
+          memStore.createIndex('by-conversation', 'conversationId');
+          memStore.createIndex('by-category', 'category');
+          memStore.createIndex('by-timestamp', 'timestamp');
+        }
       },
     });
   }
@@ -60,4 +73,15 @@ export async function saveMemoryEntry(entry: MemoryEntry): Promise<void> {
 export async function getMemoryForConversation(conversationId: string): Promise<MemoryEntry[]> {
   const db = await getDB();
   return db.getAllFromIndex('memory', 'by-conversation', conversationId);
+}
+
+export async function getAllMemory(): Promise<MemoryEntry[]> {
+  const db = await getDB();
+  const all = await db.getAllFromIndex('memory', 'by-timestamp');
+  return all.reverse();
+}
+
+export async function getMemoryByCategory(category: string): Promise<MemoryEntry[]> {
+  const db = await getDB();
+  return db.getAllFromIndex('memory', 'by-category', category);
 }

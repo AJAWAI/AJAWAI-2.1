@@ -1,10 +1,10 @@
 import type { ModelStatus } from '../lib/types';
-import { STEP_MODEL, type ModelProfile } from './modelProfiles';
+import { STEP_TARGET, type DeploymentTarget } from './modelProfiles';
 import { STEP_RUNTIME_CONNECTED } from './browserLocalAdapter';
 
 export interface ModelManagerState {
   status: ModelStatus;
-  activeModel: ModelProfile | null;
+  activeTarget: DeploymentTarget | null;
   loadTimeMs: number | null;
   error: string | null;
   runtimeConnected: boolean;
@@ -12,7 +12,7 @@ export interface ModelManagerState {
 
 let state: ModelManagerState = {
   status: 'not-loaded',
-  activeModel: null,
+  activeTarget: null,
   loadTimeMs: null,
   error: null,
   runtimeConnected: STEP_RUNTIME_CONNECTED,
@@ -38,9 +38,9 @@ export async function loadModel(): Promise<void> {
   if (!STEP_RUNTIME_CONNECTED) {
     state = {
       status: 'runtime-unavailable',
-      activeModel: STEP_MODEL,
+      activeTarget: STEP_TARGET,
       loadTimeMs: null,
-      error: 'STEP-3-VL-10B runtime is not connected yet.',
+      error: `${STEP_TARGET.modelName} (${STEP_TARGET.quantization}) runtime is not connected yet.`,
       runtimeConnected: false,
     };
     notify();
@@ -53,12 +53,10 @@ export async function loadModel(): Promise<void> {
   const start = performance.now();
 
   try {
-    // When runtime is wired, actual STEP loading logic goes here
     const loadTimeMs = performance.now() - start;
-
     state = {
       status: 'ready',
-      activeModel: STEP_MODEL,
+      activeTarget: STEP_TARGET,
       loadTimeMs,
       error: null,
       runtimeConnected: true,
@@ -67,7 +65,7 @@ export async function loadModel(): Promise<void> {
     state = {
       ...state,
       status: 'error',
-      error: e instanceof Error ? e.message : 'Failed to load STEP-3-VL-10B',
+      error: e instanceof Error ? e.message : `Failed to load ${STEP_TARGET.modelName}`,
     };
   }
 
@@ -77,7 +75,7 @@ export async function loadModel(): Promise<void> {
 export function unloadModel(): void {
   state = {
     status: 'not-loaded',
-    activeModel: null,
+    activeTarget: null,
     loadTimeMs: null,
     error: null,
     runtimeConnected: STEP_RUNTIME_CONNECTED,

@@ -1,13 +1,11 @@
 import { X } from 'lucide-react';
 import { useSettingsStore } from '../../store/settingsStore';
-import { STEP_MODEL } from '../../ai/modelProfiles';
+import { STEP_TARGET } from '../../ai/modelProfiles';
 import styles from './SettingsPanel.module.css';
 
 export function SettingsPanel() {
   const open = useSettingsStore((s) => s.settingsPanelOpen);
   const toggle = useSettingsStore((s) => s.toggleSettingsPanel);
-  const maxTokens = useSettingsStore((s) => s.maxContextTokens);
-  const setMaxTokens = useSettingsStore((s) => s.setMaxContextTokens);
 
   if (!open) return null;
 
@@ -24,25 +22,31 @@ export function SettingsPanel() {
         <div className={styles.section}>
           <label className={styles.label}>Model</label>
           <div className={styles.modelLocked}>
-            <span className={styles.modelName}>{STEP_MODEL.name}</span>
+            <span className={styles.modelName}>{STEP_TARGET.modelName}</span>
             <span className={styles.modelMeta}>
-              {(STEP_MODEL.sizeBytes / 1e9).toFixed(1)} GB — sole LLM for AJAWAI 2.1
+              {STEP_TARGET.quantization} · {STEP_TARGET.contextWindow} context · ~{STEP_TARGET.estimatedWeightSizeGB} GB
             </span>
           </div>
         </div>
 
         <div className={styles.section}>
-          <label className={styles.label}>Max Context Tokens</label>
-          <input
-            type="range"
-            className={styles.range}
-            min={512}
-            max={4096}
-            step={256}
-            value={maxTokens}
-            onChange={(e) => setMaxTokens(Number(e.target.value))}
-          />
-          <span className={styles.rangeValue}>{maxTokens}</span>
+          <label className={styles.label}>Architecture</label>
+          <div className={styles.configGrid}>
+            <span>Quantization</span><span>{STEP_TARGET.quantization}</span>
+            <span>Context Window</span><span>{STEP_TARGET.contextWindow} tokens</span>
+            <span>Max Output</span><span>{STEP_TARGET.maxOutputTokens} tokens</span>
+            <span>Memory Mode</span><span>Memory-first</span>
+            <span>Generation</span><span>Single-pass</span>
+          </div>
+        </div>
+
+        <div className={styles.section}>
+          <label className={styles.label}>Device Requirements</label>
+          <div className={styles.configGrid}>
+            <span>RAM</span><span>{STEP_TARGET.recommendedDeviceTier}</span>
+            <span>Runtime</span><span>~{STEP_TARGET.estimatedRuntimeMemoryGB} GB</span>
+            <span>Browser</span><span>{STEP_TARGET.requiresWebGPU ? 'WebGPU required' : 'WASM'}</span>
+          </div>
         </div>
       </div>
     </div>

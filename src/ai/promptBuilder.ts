@@ -1,44 +1,95 @@
-import type { Message, MemoryEntry } from '../lib/types';
+import type { Message, MemoryEntry, PromptBudget } from '../lib/types';
+import { STEP_TARGET } from './modelProfiles';
 
-const SYSTEM_PROMPT = `You are AJAWAI 2.1, powered by STEP-3-VL-10B. You are a helpful, concise, and friendly AI assistant running locally on the user's device. Be direct and efficient in your responses.`;
+const SYSTEM_PROMPT = 'You are AJAWAI, a concise local AI assistant (STEP-3-VL-10B). Be direct.';
+
+const CONTEXT_WINDOW = STEP_TARGET.contextWindow;
+const OUTPUT_RESERVE = STEP_TARGET.maxOutputTokens;
+const PROMPT_BUDGET = CONTEXT_WINDOW - OUTPUT_RESERVE;
+
+const BUDGET_MEMORY_MAX = 120;
+const BUDGET_CURRENT_MSG = 150;
+
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 3.5);
+}
 
 export interface BuiltPrompt {
   text: string;
   tokenEstimate: number;
+  budget: PromptBudget;
+  turnsIncluded: number;
+  memoryItemsIncluded: number;
 }
 
 export function buildPrompt(
   messages: Message[],
   memoryEntries: MemoryEntry[],
-  maxTokens: number = 2048,
 ): BuiltPrompt {
-  const parts: string[] = [SYSTEM_PROMPT];
+  const parts: string[] = [];
 
-  if (memoryEntries.length > 0) {
-    const memorySummary = memoryEntries
-      .slice(-3)
-      .map((e) => e.summary)
-      .join('\n');
-    parts.push(`[Context from memory]\n${memorySummary}`);
+  parts.push(SYSTEM_PROMPT);
+  const systemTokens = estimateTokens(SYSTEM_PROMPT);
+
+  const currentMsg = messages[messages.length - 1];
+  const currentText = `User: ${currentMsg.content}`;
+  const currentTokens = Math.min(estimateTokens(currentText), BUDGET_CURRENT_MSG);
+  const truncatedCurrent = currentTokens >= BUDGET_CURRENT_MSG
+    ? `User: ${currentMsg.content.slice(0, BUDGET_CURRENT_MSG * 3)}`
+    : currentText;
+
+  let memoryTokens = 0;
+  const injectedMemory: string[] = [];
+  for (const entry of memoryEntries) {
+    const line = `[${entry.category}] ${entry.summary}`;
+    const lineTokens = estimateTokens(line);
+    if (memoryTokens + lineTokens > BUDGET_MEMORY_MAX) break;
+    injectedMemory.push(line);
+    memoryTokens += lineTokens;
   }
 
-  const recentMessages = messages.slice(-10);
-  for (const msg of recentMessages) {
+  const usedSoFar = systemTokens + memoryTokens + currentTokens + 3;
+  const historyBudget = PROMPT_BUDGET - usedSoFar;
+
+  let historyTokens = 0;
+  const historyTurns: string[] = [];
+  const olderMessages = messages.slice(0, -1).reverse();
+
+  for (const msg of olderMessages) {
     const prefix = msg.role === 'user' ? 'User' : 'Assistant';
-    parts.push(`${prefix}: ${msg.content}`);
+    const line = `${prefix}: ${msg.content}`;
+    const lineTokens = estimateTokens(line);
+
+    if (historyTokens + lineTokens > historyBudget) break;
+    historyTurns.unshift(line);
+    historyTokens += lineTokens;
   }
 
+  if (injectedMemory.length > 0) {
+    parts.push(`[Memory]\n${injectedMemory.join('\n')}`);
+  }
+
+  if (historyTurns.length > 0) {
+    parts.push(historyTurns.join('\n'));
+  }
+
+  parts.push(truncatedCurrent);
   parts.push('Assistant:');
 
   const text = parts.join('\n\n');
-  const tokenEstimate = Math.ceil(text.length / 4);
-
-  const trimmedText = tokenEstimate > maxTokens
-    ? text.slice(-(maxTokens * 4))
-    : text;
+  const totalTokens = systemTokens + memoryTokens + historyTokens + currentTokens + 3;
 
   return {
-    text: trimmedText,
-    tokenEstimate: Math.min(tokenEstimate, maxTokens),
+    text,
+    tokenEstimate: totalTokens,
+    budget: {
+      system: systemTokens,
+      memory: memoryTokens,
+      history: historyTokens,
+      currentMessage: currentTokens,
+      total: totalTokens,
+    },
+    turnsIncluded: historyTurns.length,
+    memoryItemsIncluded: injectedMemory.length,
   };
 }
