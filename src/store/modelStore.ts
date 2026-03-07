@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import type { DeviceCapabilities, ModelStatus } from '../lib/types';
+import type { ConnectionDiagnostics } from '../ai/runtimeTypes';
+import { emptyDiagnostics } from '../ai/runtimeTypes';
 import { detectCapabilities } from '../ai/capabilityDetect';
 import {
   loadModel as loadModelManager,
@@ -17,12 +19,13 @@ interface ModelState {
   loadTimeMs: number | null;
   error: string | null;
   runtimeConnected: boolean;
+  diagnostics: ConnectionDiagnostics;
   capabilities: DeviceCapabilities | null;
   capabilitiesLoading: boolean;
 
   detectCapabilities: () => Promise<void>;
   loadModel: () => Promise<void>;
-  unloadModel: () => void;
+  unloadModel: () => Promise<void>;
   initSubscription: () => () => void;
 }
 
@@ -34,6 +37,7 @@ export const useModelStore = create<ModelState>((set) => ({
   loadTimeMs: null,
   error: null,
   runtimeConnected: false,
+  diagnostics: emptyDiagnostics('webllm'),
   capabilities: null,
   capabilitiesLoading: false,
 
@@ -47,8 +51,8 @@ export const useModelStore = create<ModelState>((set) => ({
     await loadModelManager();
   },
 
-  unloadModel: () => {
-    unloadModelManager();
+  unloadModel: async () => {
+    await unloadModelManager();
   },
 
   initSubscription: () => {
@@ -62,6 +66,7 @@ export const useModelStore = create<ModelState>((set) => ({
         loadTimeMs: s.loadTimeMs,
         error: s.error,
         runtimeConnected: s.runtimeConnected,
+        diagnostics: s.diagnostics,
       });
     };
     sync();

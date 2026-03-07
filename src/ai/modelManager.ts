@@ -1,6 +1,12 @@
 import type { ModelStatus } from '../lib/types';
 import { STEP_TARGET, type DeploymentTarget } from './modelProfiles';
-import { STEP_RUNTIME_CONNECTED } from './browserLocalAdapter';
+import type { ConnectionDiagnostics } from './runtimeTypes';
+import { emptyDiagnostics } from './runtimeTypes';
+import {
+  createRuntime,
+  getActiveRuntime,
+  setActiveRuntime,
+} from './browserLocalAdapter';
 
 export interface ModelManagerState {
   status: ModelStatus;
@@ -8,6 +14,7 @@ export interface ModelManagerState {
   loadTimeMs: number | null;
   error: string | null;
   runtimeConnected: boolean;
+  diagnostics: ConnectionDiagnostics;
 }
 
 let state: ModelManagerState = {
@@ -15,7 +22,8 @@ let state: ModelManagerState = {
   activeTarget: null,
   loadTimeMs: null,
   error: null,
-  runtimeConnected: STEP_RUNTIME_CONNECTED,
+  runtimeConnected: false,
+  diagnostics: emptyDiagnostics('webllm'),
 };
 
 type Listener = (s: ModelManagerState) => void;
@@ -35,50 +43,63 @@ export function subscribeModelManager(fn: Listener): () => void {
 }
 
 export async function loadModel(): Promise<void> {
-  if (!STEP_RUNTIME_CONNECTED) {
-    state = {
-      status: 'runtime-unavailable',
-      activeTarget: STEP_TARGET,
-      loadTimeMs: null,
-      error: `${STEP_TARGET.modelName} (${STEP_TARGET.quantization}) runtime is not connected yet.`,
-      runtimeConnected: false,
-    };
-    notify();
-    return;
-  }
-
-  state = { ...state, status: 'loading', error: null };
+  state = {
+    ...state,
+    status: 'loading',
+    error: null,
+    activeTarget: STEP_TARGET,
+  };
   notify();
 
+  const runtime = createRuntime();
   const start = performance.now();
 
   try {
+    await runtime.initialize(STEP_TARGET);
+
+    setActiveRuntime(runtime);
     const loadTimeMs = performance.now() - start;
+
     state = {
       status: 'ready',
       activeTarget: STEP_TARGET,
       loadTimeMs,
       error: null,
       runtimeConnected: true,
+      diagnostics: runtime.getDiagnostics(),
     };
   } catch (e) {
+    setActiveRuntime(null);
+    const diag = runtime.getDiagnostics();
+    const errorMsg = e instanceof Error ? e.message : `Failed to load ${STEP_TARGET.modelName}`;
+
     state = {
-      ...state,
       status: 'error',
-      error: e instanceof Error ? e.message : `Failed to load ${STEP_TARGET.modelName}`,
+      activeTarget: STEP_TARGET,
+      loadTimeMs: null,
+      error: errorMsg,
+      runtimeConnected: false,
+      diagnostics: diag,
     };
   }
 
   notify();
 }
 
-export function unloadModel(): void {
+export async function unloadModel(): Promise<void> {
+  const runtime = getActiveRuntime();
+  if (runtime) {
+    try { await runtime.unload(); } catch { /* best effort */ }
+    setActiveRuntime(null);
+  }
+
   state = {
     status: 'not-loaded',
     activeTarget: null,
     loadTimeMs: null,
     error: null,
-    runtimeConnected: STEP_RUNTIME_CONNECTED,
+    runtimeConnected: false,
+    diagnostics: emptyDiagnostics('webllm'),
   };
   notify();
 }
