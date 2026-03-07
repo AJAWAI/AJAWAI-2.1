@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { Settings } from '../lib/types';
+import { STEP_TARGET } from '../ai/modelProfiles';
 
 interface SettingsState extends Settings {
   sidebarOpen: boolean;
@@ -13,8 +14,8 @@ interface SettingsState extends Settings {
 export const useSettingsStore = create<SettingsState>((set) => ({
   theme: 'light',
   showDebugPanel: false,
-  maxContextTokens: 2048,
-  modelId: 'step-3-vl-10b',
+  maxContextTokens: STEP_TARGET.contextWindow,
+  modelId: STEP_TARGET.id,
   sidebarOpen: false,
   settingsPanelOpen: false,
 

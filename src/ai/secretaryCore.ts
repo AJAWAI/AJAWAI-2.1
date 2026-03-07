@@ -1,7 +1,7 @@
 import type { Message, PipelineMetrics } from '../lib/types';
-import { retrieveMemory, storeMemory } from './memory';
+import { retrieveRelevantMemory, storeMemory } from './memory';
 import { buildPrompt } from './promptBuilder';
-import { runStepInference } from './browserLocalAdapter';
+import { runStepInference, MOBILE_GENERATION_CONFIG } from './browserLocalAdapter';
 import { analyzeIntent } from './picoClaw';
 import { routeToolCall } from './toolRouter';
 import { getModelManagerState } from './modelManager';
@@ -17,13 +17,9 @@ export async function runPipeline(
 ): Promise<PipelineResult> {
   const totalStart = performance.now();
 
-  const memStart = performance.now();
-  const memoryEntries = await retrieveMemory(conversationId);
-  const memoryRetrievalMs = performance.now() - memStart;
-
   const lastMessage = messages[messages.length - 1];
-  const intent = analyzeIntent(lastMessage.content);
 
+  const intent = analyzeIntent(lastMessage.content);
   if (intent.shouldUseTool && intent.toolName && intent.toolInput) {
     const toolResult = await routeToolCall(intent.toolName, intent.toolInput);
     if (toolResult) {
@@ -32,35 +28,28 @@ export async function runPipeline(
         metrics: {
           promptTokens: 0,
           generationLatencyMs: 0,
-          memoryRetrievalMs,
+          memoryRetrievalMs: 0,
           totalLatencyMs: performance.now() - totalStart,
           generationSource: 'unavailable',
+          memoryItemsInjected: 0,
+          recentTurnsIncluded: 0,
+          budgetUsage: { system: 0, memory: 0, history: 0, currentMessage: 0, total: 0 },
+          secondPassUsed: false,
         },
       };
     }
   }
 
-  const modelState = getModelManagerState();
+  const memStart = performance.now();
+  const memoryEntries = await retrieveRelevantMemory(conversationId, lastMessage.content);
+  const memoryRetrievalMs = performance.now() - memStart;
+
   const prompt = buildPrompt(messages, memoryEntries);
 
-  if (modelState.status !== 'ready') {
-    const result = await runStepInference(prompt.text);
+  const modelState = getModelManagerState();
+  void modelState;
 
-    await storeMemory(conversationId, messages);
-
-    return {
-      response: result.text,
-      metrics: {
-        promptTokens: prompt.tokenEstimate,
-        generationLatencyMs: result.latencyMs,
-        memoryRetrievalMs,
-        totalLatencyMs: performance.now() - totalStart,
-        generationSource: result.source,
-      },
-    };
-  }
-
-  const result = await runStepInference(prompt.text);
+  const result = await runStepInference(prompt.text, MOBILE_GENERATION_CONFIG);
 
   await storeMemory(conversationId, messages);
 
@@ -72,6 +61,10 @@ export async function runPipeline(
       memoryRetrievalMs,
       totalLatencyMs: performance.now() - totalStart,
       generationSource: result.source,
+      memoryItemsInjected: prompt.memoryItemsIncluded,
+      recentTurnsIncluded: prompt.turnsIncluded,
+      budgetUsage: prompt.budget,
+      secondPassUsed: false,
     },
   };
 }

@@ -30,18 +30,21 @@ export type ModelStatus =
   | 'generating'
   | 'error';
 
-export interface ModelInfo {
-  name: string;
-  status: ModelStatus;
-  sizeBytes: number | null;
-  loadTimeMs: number | null;
-  runtimeConnected: boolean;
-}
+export type MemoryCategory =
+  | 'preference'
+  | 'personal'
+  | 'goal'
+  | 'writing'
+  | 'project'
+  | 'business'
+  | 'general';
 
 export interface MemoryEntry {
   id: string;
   conversationId: string;
+  category: MemoryCategory;
   summary: string;
+  keywords: string[];
   timestamp: number;
 }
 
@@ -52,10 +55,22 @@ export interface Settings {
   modelId: string;
 }
 
+export interface PromptBudget {
+  system: number;
+  memory: number;
+  history: number;
+  currentMessage: number;
+  total: number;
+}
+
 export interface PipelineMetrics {
   promptTokens: number;
   generationLatencyMs: number | null;
   memoryRetrievalMs: number | null;
   totalLatencyMs: number | null;
   generationSource: 'step' | 'unavailable';
+  memoryItemsInjected: number;
+  recentTurnsIncluded: number;
+  budgetUsage: PromptBudget;
+  secondPassUsed: boolean;
 }

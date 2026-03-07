@@ -59,7 +59,7 @@ export function MessageComposer() {
           <Send size={18} />
         </button>
       </div>
-      <p className={styles.hint}>AJAWAI 2.1 — Powered by STEP-3-VL-10B</p>
+      <p className={styles.hint}>AJAWAI 2.1 — STEP-3-VL-10B · Q4 · Memory-first</p>
     </div>
   );
 }

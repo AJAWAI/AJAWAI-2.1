@@ -1,8 +1,8 @@
-import { Activity, Cpu, HardDrive, Zap, Loader, WifiOff } from 'lucide-react';
+import { Activity, Cpu, HardDrive, Zap, Loader, WifiOff, Brain } from 'lucide-react';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useModelStore } from '../../store/modelStore';
 import { useChatStore } from '../../store/chatStore';
-import { STEP_MODEL } from '../../ai/modelProfiles';
+import { STEP_TARGET } from '../../ai/modelProfiles';
 import styles from './DebugPanel.module.css';
 
 const STATUS_DISPLAY: Record<string, string> = {
@@ -36,7 +36,7 @@ export function DebugPanel() {
 
       <div className={styles.section}>
         <h4 className={styles.sectionTitle}>
-          <Cpu size={12} /> Device Capabilities
+          <Cpu size={12} /> Device
         </h4>
         {capLoading ? (
           <p className={styles.muted}>Detecting…</p>
@@ -50,20 +50,10 @@ export function DebugPanel() {
             <span className={capabilities.wasm ? styles.good : styles.muted}>
               {capabilities.wasm ? 'Yes' : 'No'}
             </span>
-            <span>SharedArrayBuffer</span>
-            <span className={capabilities.sharedArrayBuffer ? styles.good : styles.muted}>
-              {capabilities.sharedArrayBuffer ? 'Yes' : 'No'}
-            </span>
             <span>Memory</span>
             <span>{capabilities.deviceMemory ? `${capabilities.deviceMemory} GB` : 'N/A'}</span>
             <span>Cores</span>
             <span>{capabilities.hardwareConcurrency}</span>
-            {capabilities.gpu && (
-              <>
-                <span>GPU</span>
-                <span>{capabilities.gpu}</span>
-              </>
-            )}
           </div>
         ) : (
           <p className={styles.muted}>Not detected</p>
@@ -72,13 +62,21 @@ export function DebugPanel() {
 
       <div className={styles.section}>
         <h4 className={styles.sectionTitle}>
-          <HardDrive size={12} /> STEP-3-VL-10B
+          <HardDrive size={12} /> Target Config
         </h4>
         <div className={styles.grid}>
           <span>Model</span>
-          <span>{STEP_MODEL.name}</span>
-          <span>Size</span>
-          <span>{(STEP_MODEL.sizeBytes / 1e9).toFixed(1)} GB</span>
+          <span>{STEP_TARGET.modelName}</span>
+          <span>Quantization</span>
+          <span>{STEP_TARGET.quantization}</span>
+          <span>Context</span>
+          <span>{STEP_TARGET.contextWindow} tokens</span>
+          <span>Max Output</span>
+          <span>{STEP_TARGET.maxOutputTokens} tokens</span>
+          <span>Weights</span>
+          <span>~{STEP_TARGET.estimatedWeightSizeGB} GB</span>
+          <span>Runtime RAM</span>
+          <span>~{STEP_TARGET.estimatedRuntimeMemoryGB} GB</span>
           <span>Status</span>
           <span data-status={modelStatus} className={styles.statusBadge}>
             {modelStatus === 'loading' && <Loader size={10} className={styles.spin} />}
@@ -127,15 +125,33 @@ export function DebugPanel() {
       {metrics && (
         <div className={styles.section}>
           <h4 className={styles.sectionTitle}>
-            <Zap size={12} /> Last Generation
+            <Brain size={12} /> Last Generation
           </h4>
           <div className={styles.grid}>
             <span>Source</span>
             <span className={metrics.generationSource === 'step' ? styles.good : styles.warn}>
               {metrics.generationSource === 'step' ? 'STEP-3-VL-10B' : 'Unavailable'}
             </span>
-            <span>Prompt Size</span>
-            <span>~{metrics.promptTokens} tokens</span>
+            <span>Mode</span>
+            <span>Single-pass{metrics.secondPassUsed ? ' + review' : ''}</span>
+            <span>Memory Items</span>
+            <span>{metrics.memoryItemsInjected}</span>
+            <span>Recent Turns</span>
+            <span>{metrics.recentTurnsIncluded}</span>
+          </div>
+
+          <h4 className={styles.sectionTitle} style={{ marginTop: 8 }}>
+            <Zap size={12} /> Budget Usage ({metrics.budgetUsage.total}/{STEP_TARGET.contextWindow - STEP_TARGET.maxOutputTokens} tokens)
+          </h4>
+          <div className={styles.grid}>
+            <span>System</span>
+            <span>{metrics.budgetUsage.system}</span>
+            <span>Memory</span>
+            <span>{metrics.budgetUsage.memory}</span>
+            <span>History</span>
+            <span>{metrics.budgetUsage.history}</span>
+            <span>Current Msg</span>
+            <span>{metrics.budgetUsage.currentMessage}</span>
             <span>Generation</span>
             <span>{metrics.generationLatencyMs?.toFixed(0) ?? '–'} ms</span>
             <span>Memory Retrieval</span>

@@ -1,5 +1,6 @@
 import { Bot, Sparkles, Shield, Zap } from 'lucide-react';
 import { useModelStore } from '../../store/modelStore';
+import { STEP_TARGET } from '../../ai/modelProfiles';
 import styles from './WelcomeScreen.module.css';
 
 export function WelcomeScreen() {
@@ -12,13 +13,15 @@ export function WelcomeScreen() {
         <Bot size={40} />
       </div>
       <h1 className={styles.title}>AJAWAI 2.1</h1>
-      <p className={styles.subtitle}>Powered by STEP-3-VL-10B</p>
+      <p className={styles.subtitle}>
+        {STEP_TARGET.modelName} · {STEP_TARGET.quantization} · {STEP_TARGET.contextWindow} ctx
+      </p>
 
       {!runtimeConnected && modelStatus !== 'loading' && (
         <p className={styles.runtimeNotice}>
-          STEP-3-VL-10B runtime is not connected yet.
+          {STEP_TARGET.modelName} runtime is not connected yet.
           <br />
-          The browser adapter is under development.
+          Target: {STEP_TARGET.quantization} quantization, {STEP_TARGET.contextWindow}-token context, memory-first.
         </p>
       )}
 
@@ -26,22 +29,22 @@ export function WelcomeScreen() {
         <div className={styles.feature}>
           <Zap size={18} className={styles.featureIcon} />
           <div>
-            <strong>Fast & Lightweight</strong>
-            <p>Optimized for mobile devices</p>
+            <strong>Q4 Optimized</strong>
+            <p>~{STEP_TARGET.estimatedWeightSizeGB} GB, tuned for mobile</p>
           </div>
         </div>
         <div className={styles.feature}>
           <Shield size={18} className={styles.featureIcon} />
           <div>
             <strong>Private & Local</strong>
-            <p>Runs entirely on your device</p>
+            <p>Single-pass generation, no remote calls</p>
           </div>
         </div>
         <div className={styles.feature}>
           <Sparkles size={18} className={styles.featureIcon} />
           <div>
-            <strong>Smart Memory</strong>
-            <p>Remembers context across chats</p>
+            <strong>Memory-First</strong>
+            <p>Smart retrieval compensates for compact context</p>
           </div>
         </div>
       </div>
