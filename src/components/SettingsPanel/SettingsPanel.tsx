@@ -1,11 +1,14 @@
 import { X } from 'lucide-react';
 import { useSettingsStore } from '../../store/settingsStore';
+import { useModelStore } from '../../store/modelStore';
 import { STEP_TARGET } from '../../ai/modelProfiles';
 import styles from './SettingsPanel.module.css';
 
 export function SettingsPanel() {
   const open = useSettingsStore((s) => s.settingsPanelOpen);
   const toggle = useSettingsStore((s) => s.toggleSettingsPanel);
+  const selectedRuntime = useSettingsStore((s) => s.selectedRuntime);
+  const modelStatus = useModelStore((s) => s.status);
 
   if (!open) return null;
 
@@ -32,7 +35,10 @@ export function SettingsPanel() {
         <div className={styles.section}>
           <label className={styles.label}>Architecture</label>
           <div className={styles.configGrid}>
-            <span>Quantization</span><span>{STEP_TARGET.quantization}</span>
+            <span>Runtime</span>
+            <span>{selectedRuntime === 'wllama' ? 'Wllama (WASM/GGUF)' : 'WebLLM (WebGPU/MLC)'}</span>
+            <span>Status</span>
+            <span>{modelStatus}</span>
             <span>Context Window</span><span>{STEP_TARGET.contextWindow} tokens</span>
             <span>Max Output</span><span>{STEP_TARGET.maxOutputTokens} tokens</span>
             <span>Memory Mode</span><span>Memory-first</span>
@@ -44,8 +50,9 @@ export function SettingsPanel() {
           <label className={styles.label}>Device Requirements</label>
           <div className={styles.configGrid}>
             <span>RAM</span><span>{STEP_TARGET.recommendedDeviceTier}</span>
-            <span>Runtime</span><span>~{STEP_TARGET.estimatedRuntimeMemoryGB} GB</span>
-            <span>Runtime</span><span>{STEP_TARGET.preferredRuntime}</span>
+            <span>Runtime RAM</span><span>~{STEP_TARGET.estimatedRuntimeMemoryGB} GB</span>
+            <span>Browser</span>
+            <span>{selectedRuntime === 'wllama' ? 'WASM (all browsers)' : 'WebGPU (Chrome 113+)'}</span>
           </div>
         </div>
       </div>

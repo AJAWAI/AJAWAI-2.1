@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { DeviceCapabilities, ModelStatus } from '../lib/types';
-import type { ConnectionDiagnostics } from '../ai/runtimeTypes';
+import type { ConnectionDiagnostics, RuntimeId } from '../ai/runtimeTypes';
 import { emptyDiagnostics } from '../ai/runtimeTypes';
 import { detectCapabilities } from '../ai/capabilityDetect';
 import {
@@ -10,6 +10,7 @@ import {
   subscribeModelManager,
 } from '../ai/modelManager';
 import { STEP_TARGET } from '../ai/modelProfiles';
+import { getSelectedRuntimeId } from '../ai/browserLocalAdapter';
 
 interface ModelState {
   status: ModelStatus;
@@ -19,12 +20,13 @@ interface ModelState {
   loadTimeMs: number | null;
   error: string | null;
   runtimeConnected: boolean;
+  selectedRuntime: RuntimeId;
   diagnostics: ConnectionDiagnostics;
   capabilities: DeviceCapabilities | null;
   capabilitiesLoading: boolean;
 
   detectCapabilities: () => Promise<void>;
-  loadModel: () => Promise<void>;
+  loadModel: (ggufVariant?: string) => Promise<void>;
   unloadModel: () => Promise<void>;
   initSubscription: () => () => void;
 }
@@ -37,7 +39,8 @@ export const useModelStore = create<ModelState>((set) => ({
   loadTimeMs: null,
   error: null,
   runtimeConnected: false,
-  diagnostics: emptyDiagnostics('webllm'),
+  selectedRuntime: getSelectedRuntimeId(),
+  diagnostics: emptyDiagnostics(getSelectedRuntimeId()),
   capabilities: null,
   capabilitiesLoading: false,
 
@@ -47,8 +50,8 @@ export const useModelStore = create<ModelState>((set) => ({
     set({ capabilities, capabilitiesLoading: false });
   },
 
-  loadModel: async () => {
-    await loadModelManager();
+  loadModel: async (ggufVariant?: string) => {
+    await loadModelManager(ggufVariant);
   },
 
   unloadModel: async () => {
@@ -66,6 +69,7 @@ export const useModelStore = create<ModelState>((set) => ({
         loadTimeMs: s.loadTimeMs,
         error: s.error,
         runtimeConnected: s.runtimeConnected,
+        selectedRuntime: s.selectedRuntime,
         diagnostics: s.diagnostics,
       });
     };
