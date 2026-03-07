@@ -1,7 +1,7 @@
 import type { Message, PipelineMetrics } from '../lib/types';
 import { retrieveMemory, storeMemory } from './memory';
 import { buildPrompt } from './promptBuilder';
-import { runLocalInference } from './browserLocalAdapter';
+import { runStepInference } from './browserLocalAdapter';
 import { analyzeIntent } from './picoClaw';
 import { routeToolCall } from './toolRouter';
 import { getModelManagerState } from './modelManager';
@@ -34,38 +34,44 @@ export async function runPipeline(
           generationLatencyMs: 0,
           memoryRetrievalMs,
           totalLatencyMs: performance.now() - totalStart,
+          generationSource: 'unavailable',
         },
       };
     }
   }
 
   const modelState = getModelManagerState();
-
   const prompt = buildPrompt(messages, memoryEntries);
 
-  let response: string;
-  let generationLatencyMs: number;
+  if (modelState.status !== 'ready') {
+    const result = await runStepInference(prompt.text);
 
-  if (modelState.status === 'ready') {
-    const result = await runLocalInference(prompt.text);
-    response = result.text;
-    generationLatencyMs = result.latencyMs;
-  } else {
-    await new Promise((r) => setTimeout(r, 200));
-    response =
-      "I'm AJAWAI, your local AI assistant running in placeholder mode. Load a local model from the debug panel to enable real AI responses!";
-    generationLatencyMs = 200;
+    await storeMemory(conversationId, messages);
+
+    return {
+      response: result.text,
+      metrics: {
+        promptTokens: prompt.tokenEstimate,
+        generationLatencyMs: result.latencyMs,
+        memoryRetrievalMs,
+        totalLatencyMs: performance.now() - totalStart,
+        generationSource: result.source,
+      },
+    };
   }
+
+  const result = await runStepInference(prompt.text);
 
   await storeMemory(conversationId, messages);
 
   return {
-    response,
+    response: result.text,
     metrics: {
       promptTokens: prompt.tokenEstimate,
-      generationLatencyMs,
+      generationLatencyMs: result.latencyMs,
       memoryRetrievalMs,
       totalLatencyMs: performance.now() - totalStart,
+      generationSource: result.source,
     },
   };
 }

@@ -7,29 +7,15 @@ export interface ModelProfile {
   description: string;
 }
 
-export const MODEL_PROFILES: ModelProfile[] = [
-  {
-    id: 'tinyllama-1.1b',
-    name: 'TinyLlama 1.1B',
-    sizeBytes: 637_534_208,
-    minMemoryGB: 2,
-    requiresWebGPU: false,
-    description: 'Lightweight model suitable for basic tasks',
-  },
-  {
-    id: 'phi-2',
-    name: 'Phi-2 2.7B',
-    sizeBytes: 1_500_000_000,
-    minMemoryGB: 4,
-    requiresWebGPU: true,
-    description: 'More capable model requiring WebGPU',
-  },
-];
-
-export function getDefaultModelId(): string {
-  return MODEL_PROFILES[0].id;
-}
+export const STEP_MODEL: ModelProfile = {
+  id: 'step-3-vl-10b',
+  name: 'STEP-3-VL-10B',
+  sizeBytes: 10_000_000_000,
+  minMemoryGB: 8,
+  requiresWebGPU: true,
+  description: 'STEP-3-VL-10B — the sole LLM for AJAWAI 2.1',
+};
 
 export function getModelProfile(id: string): ModelProfile | undefined {
-  return MODEL_PROFILES.find((m) => m.id === id);
+  return id === STEP_MODEL.id ? STEP_MODEL : undefined;
 }

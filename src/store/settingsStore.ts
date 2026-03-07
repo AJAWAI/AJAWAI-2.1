@@ -1,6 +1,5 @@
 import { create } from 'zustand';
 import type { Settings } from '../lib/types';
-import { getDefaultModelId } from '../ai/modelProfiles';
 
 interface SettingsState extends Settings {
   sidebarOpen: boolean;
@@ -9,14 +8,13 @@ interface SettingsState extends Settings {
   toggleSettingsPanel: () => void;
   toggleDebugPanel: () => void;
   setMaxContextTokens: (n: number) => void;
-  setModelId: (id: string) => void;
 }
 
 export const useSettingsStore = create<SettingsState>((set) => ({
   theme: 'light',
   showDebugPanel: false,
   maxContextTokens: 2048,
-  modelId: getDefaultModelId(),
+  modelId: 'step-3-vl-10b',
   sidebarOpen: false,
   settingsPanelOpen: false,
 
@@ -24,5 +22,4 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   toggleSettingsPanel: () => set((s) => ({ settingsPanelOpen: !s.settingsPanelOpen })),
   toggleDebugPanel: () => set((s) => ({ showDebugPanel: !s.showDebugPanel })),
   setMaxContextTokens: (n) => set({ maxContextTokens: n }),
-  setModelId: (id) => set({ modelId: id }),
 }));

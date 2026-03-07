@@ -1,17 +1,27 @@
-import { Activity, Cpu, HardDrive, Zap, Loader } from 'lucide-react';
+import { Activity, Cpu, HardDrive, Zap, Loader, WifiOff } from 'lucide-react';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useModelStore } from '../../store/modelStore';
 import { useChatStore } from '../../store/chatStore';
+import { STEP_MODEL } from '../../ai/modelProfiles';
 import styles from './DebugPanel.module.css';
+
+const STATUS_DISPLAY: Record<string, string> = {
+  'not-loaded': 'Not Loaded',
+  'runtime-unavailable': 'Runtime Not Connected',
+  'loading': 'Loading STEP…',
+  'ready': 'STEP Ready',
+  'generating': 'Generating…',
+  'error': 'Error',
+};
 
 export function DebugPanel() {
   const show = useSettingsStore((s) => s.showDebugPanel);
-  const modelId = useSettingsStore((s) => s.modelId);
   const capabilities = useModelStore((s) => s.capabilities);
   const capLoading = useModelStore((s) => s.capabilitiesLoading);
   const modelStatus = useModelStore((s) => s.status);
-  const modelName = useModelStore((s) => s.modelName);
   const loadTimeMs = useModelStore((s) => s.loadTimeMs);
+  const runtimeConnected = useModelStore((s) => s.runtimeConnected);
+  const error = useModelStore((s) => s.error);
   const loadModel = useModelStore((s) => s.loadModel);
   const unloadModel = useModelStore((s) => s.unloadModel);
   const metrics = useChatStore((s) => s.lastMetrics);
@@ -62,36 +72,53 @@ export function DebugPanel() {
 
       <div className={styles.section}>
         <h4 className={styles.sectionTitle}>
-          <HardDrive size={12} /> Model Status
+          <HardDrive size={12} /> STEP-3-VL-10B
         </h4>
         <div className={styles.grid}>
+          <span>Model</span>
+          <span>{STEP_MODEL.name}</span>
+          <span>Size</span>
+          <span>{(STEP_MODEL.sizeBytes / 1e9).toFixed(1)} GB</span>
           <span>Status</span>
           <span data-status={modelStatus} className={styles.statusBadge}>
             {modelStatus === 'loading' && <Loader size={10} className={styles.spin} />}
-            {modelStatus}
+            {STATUS_DISPLAY[modelStatus] ?? modelStatus}
           </span>
-          {modelName && (
-            <>
-              <span>Model</span>
-              <span>{modelName}</span>
-            </>
-          )}
+          <span>Runtime</span>
+          <span className={runtimeConnected ? styles.good : styles.warn}>
+            {runtimeConnected ? (
+              'Connected'
+            ) : (
+              <><WifiOff size={10} /> Not Connected</>
+            )}
+          </span>
           {loadTimeMs != null && (
             <>
               <span>Load Time</span>
               <span>{loadTimeMs.toFixed(0)} ms</span>
             </>
           )}
+          {error && (
+            <>
+              <span>Error</span>
+              <span className={styles.errorText}>{error}</span>
+            </>
+          )}
         </div>
         <div className={styles.actions}>
-          {modelStatus !== 'ready' && modelStatus !== 'loading' && (
-            <button className={styles.actionBtn} onClick={() => loadModel(modelId)}>
-              Load Local Model
+          {modelStatus === 'not-loaded' && (
+            <button className={styles.actionBtn} onClick={() => loadModel()}>
+              Connect STEP Runtime
             </button>
           )}
-          {modelStatus === 'ready' && (
+          {modelStatus === 'runtime-unavailable' && (
+            <button className={styles.actionBtn} onClick={() => loadModel()}>
+              Retry Connection
+            </button>
+          )}
+          {(modelStatus === 'ready' || modelStatus === 'runtime-unavailable') && (
             <button className={styles.actionBtnSecondary} onClick={unloadModel}>
-              Unload Model
+              Disconnect
             </button>
           )}
         </div>
@@ -103,6 +130,10 @@ export function DebugPanel() {
             <Zap size={12} /> Last Generation
           </h4>
           <div className={styles.grid}>
+            <span>Source</span>
+            <span className={metrics.generationSource === 'step' ? styles.good : styles.warn}>
+              {metrics.generationSource === 'step' ? 'STEP-3-VL-10B' : 'Unavailable'}
+            </span>
             <span>Prompt Size</span>
             <span>~{metrics.promptTokens} tokens</span>
             <span>Generation</span>

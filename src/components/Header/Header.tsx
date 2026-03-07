@@ -3,6 +3,15 @@ import { useSettingsStore } from '../../store/settingsStore';
 import { useModelStore } from '../../store/modelStore';
 import styles from './Header.module.css';
 
+const STATUS_LABELS: Record<string, string> = {
+  'ready': 'STEP Ready',
+  'loading': 'Loading STEP…',
+  'generating': 'Generating…',
+  'runtime-unavailable': 'STEP Not Connected',
+  'error': 'STEP Error',
+  'not-loaded': 'STEP Not Loaded',
+};
+
 export function Header() {
   const toggleSidebar = useSettingsStore((s) => s.toggleSidebar);
   const toggleSettingsPanel = useSettingsStore((s) => s.toggleSettingsPanel);
@@ -18,7 +27,7 @@ export function Header() {
       <div className={styles.center}>
         <span className={styles.title}>AJAWAI</span>
         <span className={styles.badge} data-status={modelStatus}>
-          {modelStatus === 'ready' ? 'Model Ready' : modelStatus === 'loading' ? 'Loading…' : 'No Model'}
+          {STATUS_LABELS[modelStatus] ?? modelStatus}
         </span>
       </div>
 

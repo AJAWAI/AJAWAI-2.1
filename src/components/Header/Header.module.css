@@ -55,16 +55,25 @@
   color: var(--color-mint-dark);
 }
 
-.badge[data-status='loading'] {
+.badge[data-status='loading'],
+.badge[data-status='generating'] {
   background: #fef3cd;
   color: #856404;
 }
 
-.badge[data-status='not-loaded'],
-.badge[data-status='idle'],
-.badge[data-status='error'] {
+.badge[data-status='runtime-unavailable'] {
+  background: #fce8db;
+  color: #9a3412;
+}
+
+.badge[data-status='not-loaded'] {
   background: var(--color-bg-tertiary);
   color: var(--color-text-muted);
+}
+
+.badge[data-status='error'] {
+  background: #fee2e2;
+  color: #dc2626;
 }
 
 .actions {

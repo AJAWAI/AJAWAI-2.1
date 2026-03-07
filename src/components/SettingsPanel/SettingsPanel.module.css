@@ -56,19 +56,25 @@
   margin-bottom: 6px;
 }
 
-.select {
-  width: 100%;
-  padding: 8px 12px;
+.modelLocked {
+  padding: 10px 12px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  font-size: 14px;
   background: var(--color-bg-secondary);
-  color: var(--color-text);
-  outline: none;
 }
 
-.select:focus {
-  border-color: var(--color-mint);
+.modelName {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.modelMeta {
+  display: block;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  margin-top: 2px;
 }
 
 .range {
