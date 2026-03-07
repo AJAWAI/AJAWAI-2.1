@@ -7,14 +7,16 @@ export type ConnectionStage =
   | 'checking-browser'
   | 'checking-artifacts'
   | 'checking-memory'
-  | 'downloading'
-  | 'initializing'
+  | 'loading-runtime'
+  | 'downloading-model'
+  | 'loading-model'
   | 'ready'
   | 'failed';
 
 export interface ConnectionDiagnostics {
   runtimePath: RuntimeId;
   stage: ConnectionStage;
+  subStatus: string;
   browserCompatible: boolean | null;
   artifactsAvailable: boolean | null;
   memoryEstimateGB: number | null;
@@ -22,12 +24,17 @@ export interface ConnectionDiagnostics {
   failureReason: string | null;
   failureStage: ConnectionStage | null;
   downloadProgress: number;
+  downloadedBytes: number;
+  totalBytes: number;
+  elapsedMs: number;
+  stageStartMs: number;
 }
 
 export function emptyDiagnostics(runtimeId: RuntimeId): ConnectionDiagnostics {
   return {
     runtimePath: runtimeId,
     stage: 'idle',
+    subStatus: '',
     browserCompatible: null,
     artifactsAvailable: null,
     memoryEstimateGB: null,
@@ -35,6 +42,10 @@ export function emptyDiagnostics(runtimeId: RuntimeId): ConnectionDiagnostics {
     failureReason: null,
     failureStage: null,
     downloadProgress: 0,
+    downloadedBytes: 0,
+    totalBytes: 0,
+    elapsedMs: 0,
+    stageStartMs: 0,
   };
 }
 

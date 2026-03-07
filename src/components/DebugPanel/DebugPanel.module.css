@@ -193,3 +193,32 @@
   padding: 1px 0;
   line-height: 1.4;
 }
+
+.liveStatus {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 6px 10px;
+  background: #eff6ff;
+  border-radius: var(--radius-sm);
+  color: #1e40af;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.progressBar {
+  margin-top: 6px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--color-bg-tertiary);
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  background: var(--color-mint-gradient);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}

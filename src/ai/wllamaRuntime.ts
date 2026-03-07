@@ -2,6 +2,7 @@ import type { DeploymentTarget } from './modelProfiles';
 import {
   type RuntimeBackend,
   type ConnectionDiagnostics,
+  type ConnectionStage,
   emptyDiagnostics,
 } from './runtimeTypes';
 import {
@@ -17,6 +18,7 @@ interface WllamaInstance {
     urls: string | string[],
     options?: {
       n_ctx?: number;
+      n_threads?: number;
       progressCallback?: (progress: { loaded: number; total: number }) => void;
     },
   ) => Promise<void>;
@@ -50,11 +52,14 @@ function emptyWllamaDiag(): WllamaDiagnostics {
   };
 }
 
+const STALL_TIMEOUT_MS = 120_000;
+
 export class WllamaRuntime implements RuntimeBackend {
   readonly id = 'wllama' as const;
   private instance: WllamaInstance | null = null;
   private diag: WllamaDiagnostics = emptyWllamaDiag();
   private ggufConfig: GgufArtifactConfig;
+  private initStart = 0;
 
   constructor(variant: string = DEFAULT_GGUF_VARIANT) {
     this.ggufConfig = STEP_GGUF_ARTIFACTS[variant] ?? STEP_GGUF_ARTIFACTS[DEFAULT_GGUF_VARIANT];
@@ -62,22 +67,39 @@ export class WllamaRuntime implements RuntimeBackend {
   }
 
   getDiagnostics(): WllamaDiagnostics {
+    if (this.initStart > 0) {
+      this.diag.elapsedMs = performance.now() - this.initStart;
+    }
     return { ...this.diag };
   }
 
+  private setStage(stage: ConnectionStage, subStatus: string) {
+    this.diag = {
+      ...this.diag,
+      stage,
+      subStatus,
+      stageStartMs: performance.now(),
+    };
+  }
+
+  private fail(stage: ConnectionStage, reason: string): Error {
+    this.diag = {
+      ...this.diag,
+      stage: 'failed',
+      failureStage: stage,
+      failureReason: reason,
+      subStatus: `Failed: ${reason}`,
+      elapsedMs: this.initStart > 0 ? performance.now() - this.initStart : 0,
+    };
+    return new Error(reason);
+  }
+
   async checkBrowserSupport(): Promise<boolean> {
-    this.diag = { ...this.diag, stage: 'checking-browser' };
+    this.setStage('checking-browser', 'Checking WebAssembly support');
 
     const wasmOk = typeof WebAssembly === 'object' && typeof WebAssembly.instantiate === 'function';
     if (!wasmOk) {
-      this.diag = {
-        ...this.diag,
-        browserCompatible: false,
-        failureReason: 'WebAssembly not available in this browser.',
-        failureStage: 'checking-browser',
-        stage: 'failed',
-      };
-      return false;
+      throw this.fail('checking-browser', 'WebAssembly not available in this browser.');
     }
 
     const nav = globalThis.navigator as Navigator & { deviceMemory?: number };
@@ -85,70 +107,56 @@ export class WllamaRuntime implements RuntimeBackend {
       ...this.diag,
       browserCompatible: true,
       memoryEstimateGB: nav.deviceMemory ?? null,
+      subStatus: 'Browser OK',
     };
     return true;
   }
 
   async initialize(target: DeploymentTarget): Promise<void> {
-    this.diag = { ...emptyWllamaDiag(), ggufVariant: this.diag.ggufVariant, stage: 'checking-browser' };
+    this.initStart = performance.now();
+    this.diag = { ...emptyWllamaDiag(), ggufVariant: this.diag.ggufVariant };
 
-    const supported = await this.checkBrowserSupport();
-    if (!supported) throw new Error(this.diag.failureReason || 'Browser not compatible');
+    await this.checkBrowserSupport();
 
+    this.setStage('checking-memory', 'Checking device memory');
     const deviceMem = this.diag.memoryEstimateGB;
-    this.diag = { ...this.diag, stage: 'checking-memory' };
     if (deviceMem !== null && deviceMem < this.ggufConfig.estimatedRuntimeGB) {
-      const reason = `Insufficient memory: device reports ${deviceMem} GB, model needs ~${this.ggufConfig.estimatedRuntimeGB} GB. Model may still load but could be slow or crash.`;
-      this.diag = { ...this.diag, memorySufficient: false, failureReason: reason, failureStage: 'checking-memory', stage: 'failed' };
-      throw new Error(reason);
+      throw this.fail('checking-memory',
+        `Device reports ${deviceMem} GB, model needs ~${this.ggufConfig.estimatedRuntimeGB} GB.`);
     }
-    this.diag = { ...this.diag, memorySufficient: deviceMem === null ? null : true };
+    this.diag.memorySufficient = deviceMem === null ? null : true;
 
-    this.diag = { ...this.diag, stage: 'checking-artifacts' };
-
+    this.setStage('checking-artifacts', 'Validating GGUF URLs');
     if (this.ggufConfig.urls.length === 0) {
-      const reason = 'No GGUF artifact URLs configured.';
-      this.diag = { ...this.diag, artifactsAvailable: false, failureReason: reason, failureStage: 'checking-artifacts', stage: 'failed' };
-      throw new Error(reason);
+      throw this.fail('checking-artifacts', 'No GGUF artifact URLs configured.');
     }
 
     const validation = await validateGgufArtifacts(this.ggufConfig);
-    this.diag = {
-      ...this.diag,
-      artifactChecks: validation.checks,
-      mmprojCheck: validation.mmprojCheck,
-    };
+    this.diag.artifactChecks = validation.checks;
+    this.diag.mmprojCheck = validation.mmprojCheck;
 
     if (!validation.valid) {
       const failedFiles = validation.checks.filter((c) => !c.reachable);
       const details = failedFiles.map((f) => `${f.label}: ${f.error ?? 'unreachable'}`).join('; ');
-      const reason = `GGUF artifacts not reachable: ${details}`;
-      this.diag = { ...this.diag, artifactsAvailable: false, failureReason: reason, failureStage: 'checking-artifacts', stage: 'failed' };
-      throw new Error(reason);
+      throw this.fail('checking-artifacts', `GGUF not reachable: ${details}`);
     }
 
     const totalSize = validation.checks.reduce((sum, c) => sum + (c.contentLength ?? 0), 0);
-    this.diag = {
-      ...this.diag,
-      artifactsAvailable: true,
-      fileSizeBytes: totalSize > 0 ? totalSize : null,
-      mmprojRequired: false,
-    };
+    this.diag.artifactsAvailable = true;
+    this.diag.fileSizeBytes = totalSize > 0 ? totalSize : this.ggufConfig.fileSizeBytes;
+    this.diag.totalBytes = totalSize > 0 ? totalSize : this.ggufConfig.fileSizeBytes;
 
-    this.diag = { ...this.diag, stage: 'downloading' };
-
+    this.setStage('loading-runtime', 'Loading wllama WASM runtime');
     type WllamaConstructor = new (configPaths: Record<string, string>) => WllamaInstance;
     let WllamaClass: WllamaConstructor;
     try {
       const mod = await import('@wllama/wllama/esm');
       WllamaClass = (mod as unknown as { Wllama: WllamaConstructor }).Wllama;
     } catch (e) {
-      const reason = `Failed to load wllama runtime: ${e instanceof Error ? e.message : String(e)}`;
-      this.diag = { ...this.diag, failureReason: reason, failureStage: 'downloading', stage: 'failed' };
-      throw new Error(reason);
+      throw this.fail('loading-runtime',
+        `Failed to load wllama JS module: ${e instanceof Error ? e.message : String(e)}`);
     }
-
-    this.diag = { ...this.diag, stage: 'initializing' };
+    this.diag.subStatus = 'Wllama module loaded, creating instance';
 
     try {
       const wllamaBase = 'https://cdn.jsdelivr.net/npm/@wllama/wllama@2.3.7/esm/';
@@ -156,26 +164,66 @@ export class WllamaRuntime implements RuntimeBackend {
         'single-thread/wllama.js': wllamaBase + 'single-thread/wllama.js',
         'multi-thread/wllama.js': wllamaBase + 'multi-thread/wllama.js',
       });
+    } catch (e) {
+      throw this.fail('loading-runtime',
+        `Failed to create wllama instance: ${e instanceof Error ? e.message : String(e)}`);
+    }
 
+    this.setStage('downloading-model', `Downloading ${this.ggufConfig.quantization} GGUF (${(this.diag.totalBytes / 1e9).toFixed(2)} GB)`);
+
+    let lastProgressMs = performance.now();
+    const stallChecker = setInterval(() => {
+      const stallMs = performance.now() - lastProgressMs;
+      if (stallMs > STALL_TIMEOUT_MS && this.diag.stage === 'downloading-model') {
+        this.diag.subStatus = `Stalled — no progress for ${(stallMs / 1000).toFixed(0)}s. May be OOM or network issue.`;
+      }
+    }, 5000);
+
+    try {
       const urls = this.ggufConfig.urls.length === 1
         ? this.ggufConfig.urls[0]
         : this.ggufConfig.urls;
 
       await this.instance.loadModelFromUrl(urls, {
         n_ctx: target.contextWindow,
+        n_threads: Math.min(navigator.hardwareConcurrency ?? 2, 4),
         progressCallback: (p) => {
-          const progress = p.total > 0 ? p.loaded / p.total : 0;
-          this.diag = { ...this.diag, downloadProgress: progress };
+          lastProgressMs = performance.now();
+          const pct = p.total > 0 ? p.loaded / p.total : 0;
+          this.diag = {
+            ...this.diag,
+            downloadProgress: pct,
+            downloadedBytes: p.loaded,
+            totalBytes: p.total > 0 ? p.total : this.diag.totalBytes,
+            subStatus: pct < 1
+              ? `Downloading: ${(p.loaded / 1e6).toFixed(0)} / ${(p.total / 1e6).toFixed(0)} MB (${(pct * 100).toFixed(1)}%)`
+              : 'Download complete, loading model into memory…',
+          };
+          if (pct >= 1 && this.diag.stage === 'downloading-model') {
+            this.diag.stage = 'loading-model';
+            this.diag.subStatus = 'Parsing GGUF, allocating context, loading tokenizer…';
+          }
         },
       });
     } catch (e) {
+      clearInterval(stallChecker);
       this.instance = null;
-      const reason = `Wllama init failed: ${e instanceof Error ? e.message : String(e)}`;
-      this.diag = { ...this.diag, failureReason: reason, failureStage: 'initializing', stage: 'failed' };
-      throw new Error(reason);
+      const msg = e instanceof Error ? e.message : String(e);
+      const stage = this.diag.stage === 'loading-model' ? 'loading-model' : 'downloading-model';
+      const hint = msg.includes('memory') || msg.includes('OOM') || msg.includes('RangeError')
+        ? ` This likely means the ${(this.diag.totalBytes / 1e9).toFixed(1)} GB file exceeds the browser's memory limit. Try Q3_K_M (3.84 GB) or split the GGUF into ≤512 MB shards.`
+        : '';
+      throw this.fail(stage, `${msg}${hint}`);
     }
 
-    this.diag = { ...this.diag, stage: 'ready', downloadProgress: 1 };
+    clearInterval(stallChecker);
+    this.diag = {
+      ...this.diag,
+      stage: 'ready',
+      downloadProgress: 1,
+      subStatus: 'Model loaded and ready',
+      elapsedMs: performance.now() - this.initStart,
+    };
   }
 
   async generate(prompt: string, maxTokens: number, temperature: number): Promise<string> {
@@ -193,6 +241,7 @@ export class WllamaRuntime implements RuntimeBackend {
       try { await this.instance.exit(); } catch { /* best effort */ }
       this.instance = null;
     }
+    this.initStart = 0;
     this.diag = emptyWllamaDiag();
   }
 }

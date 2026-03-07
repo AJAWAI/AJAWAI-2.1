@@ -151,7 +151,7 @@ export class WebLLMRuntime implements RuntimeBackend {
     }
     this.diag = { ...this.diag, artifactsAvailable: true };
 
-    this.diag = { ...this.diag, stage: 'downloading' };
+    this.diag = { ...this.diag, stage: 'loading-runtime', subStatus: 'Loading WebLLM module' };
 
     let CreateMLCEngine: CreateMLCEngineFn;
     try {
@@ -162,13 +162,13 @@ export class WebLLMRuntime implements RuntimeBackend {
       this.diag = {
         ...this.diag,
         failureReason: reason,
-        failureStage: 'downloading',
+        failureStage: 'loading-runtime',
         stage: 'failed',
       };
       throw new Error(reason);
     }
 
-    this.diag = { ...this.diag, stage: 'initializing' };
+    this.diag = { ...this.diag, stage: 'downloading-model', subStatus: 'Downloading MLC model' };
     try {
       this.engine = await CreateMLCEngine(target.artifacts.mlcModelId, {
         appConfig: {
@@ -189,7 +189,7 @@ export class WebLLMRuntime implements RuntimeBackend {
       this.diag = {
         ...this.diag,
         failureReason: reason,
-        failureStage: 'initializing',
+        failureStage: 'downloading-model',
         stage: 'failed',
       };
       throw new Error(reason);

@@ -1,11 +1,19 @@
 import { Bot, Sparkles, Shield, Zap } from 'lucide-react';
 import { useModelStore } from '../../store/modelStore';
 import { STEP_TARGET } from '../../ai/modelProfiles';
+import { STEP_GGUF_ARTIFACTS, DEFAULT_GGUF_VARIANT } from '../../ai/ggufArtifacts';
+import { useSettingsStore } from '../../store/settingsStore';
 import styles from './WelcomeScreen.module.css';
 
 export function WelcomeScreen() {
   const runtimeConnected = useModelStore((s) => s.runtimeConnected);
   const modelStatus = useModelStore((s) => s.status);
+  const selectedRuntime = useSettingsStore((s) => s.selectedRuntime);
+
+  const ggufCfg = STEP_GGUF_ARTIFACTS[DEFAULT_GGUF_VARIANT];
+  const sizeLabel = selectedRuntime === 'wllama' && ggufCfg
+    ? `${ggufCfg.quantization} · ${(ggufCfg.fileSizeBytes / 1e9).toFixed(1)} GB`
+    : `~${STEP_TARGET.estimatedWeightSizeGB} GB`;
 
   return (
     <div className={styles.container}>
@@ -14,14 +22,12 @@ export function WelcomeScreen() {
       </div>
       <h1 className={styles.title}>AJAWAI 2.1</h1>
       <p className={styles.subtitle}>
-        {STEP_TARGET.modelName} · {STEP_TARGET.quantization} · {STEP_TARGET.contextWindow} ctx
+        {STEP_TARGET.modelName} · {sizeLabel} · {STEP_TARGET.contextWindow} ctx
       </p>
 
       {!runtimeConnected && modelStatus !== 'loading' && (
         <p className={styles.runtimeNotice}>
-          {STEP_TARGET.modelName} runtime is not connected yet.
-          <br />
-          Target: {STEP_TARGET.quantization} quantization, {STEP_TARGET.contextWindow}-token context, memory-first.
+          Open the debug panel to connect {STEP_TARGET.modelName} via {selectedRuntime}.
         </p>
       )}
 
@@ -29,8 +35,8 @@ export function WelcomeScreen() {
         <div className={styles.feature}>
           <Zap size={18} className={styles.featureIcon} />
           <div>
-            <strong>Q4 Optimized</strong>
-            <p>~{STEP_TARGET.estimatedWeightSizeGB} GB, tuned for mobile</p>
+            <strong>{selectedRuntime === 'wllama' ? (ggufCfg?.quantization ?? 'GGUF') : 'Q4'} Optimized</strong>
+            <p>{sizeLabel}, tuned for mobile</p>
           </div>
         </div>
         <div className={styles.feature}>
