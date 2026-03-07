@@ -1,11 +1,14 @@
 import { Bot, Sparkles, Shield, Zap } from 'lucide-react';
 import { useModelStore } from '../../store/modelStore';
-import { STEP_TARGET } from '../../ai/modelProfiles';
+import { STEP_TARGET, getArtifactStatus } from '../../ai/modelProfiles';
 import styles from './WelcomeScreen.module.css';
 
 export function WelcomeScreen() {
   const runtimeConnected = useModelStore((s) => s.runtimeConnected);
   const modelStatus = useModelStore((s) => s.status);
+
+  const artifactStatus = getArtifactStatus(STEP_TARGET.artifacts, STEP_TARGET.preferredRuntime);
+  const artifactsMissing = artifactStatus === 'not-configured' || artifactStatus === 'invalid';
 
   return (
     <div className={styles.container}>
@@ -17,11 +20,19 @@ export function WelcomeScreen() {
         {STEP_TARGET.modelName} · {STEP_TARGET.quantization} · {STEP_TARGET.contextWindow} ctx
       </p>
 
-      {!runtimeConnected && modelStatus !== 'loading' && (
+      {artifactsMissing && (
         <p className={styles.runtimeNotice}>
-          {STEP_TARGET.modelName} runtime is not connected yet.
+          Blocked: {STEP_TARGET.modelName} model files are not publicly available yet.
           <br />
-          Target: {STEP_TARGET.quantization} quantization, {STEP_TARGET.contextWindow}-token context, memory-first.
+          The app is ready — waiting for MLC-compiled artifacts.
+        </p>
+      )}
+
+      {!artifactsMissing && !runtimeConnected && modelStatus !== 'loading' && (
+        <p className={styles.runtimeNotice}>
+          {STEP_TARGET.modelName} runtime is not connected.
+          <br />
+          Open the debug panel to attempt connection.
         </p>
       )}
 

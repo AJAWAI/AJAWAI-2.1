@@ -2,6 +2,7 @@ import type { DeploymentTarget } from './modelProfiles';
 import {
   type RuntimeBackend,
   type ConnectionDiagnostics,
+  type ArtifactCheckResult,
   emptyDiagnostics,
 } from './runtimeTypes';
 
@@ -32,6 +33,17 @@ type CreateMLCEngineFn = (
     initProgressCallback?: (report: { text: string; progress: number }) => void;
   },
 ) => Promise<WebLLMEngine>;
+
+async function checkUrl(label: string, url: string): Promise<ArtifactCheckResult> {
+  try {
+    const r = await fetch(url, { method: 'HEAD', mode: 'cors' });
+    if (r.ok) return { file: label, url, status: 'ok', httpStatus: r.status };
+    if (r.status === 401 || r.status === 403) return { file: label, url, status: 'forbidden', httpStatus: r.status };
+    return { file: label, url, status: 'missing', httpStatus: r.status };
+  } catch {
+    return { file: label, url, status: 'error', httpStatus: null };
+  }
+}
 
 export class WebLLMRuntime implements RuntimeBackend {
   readonly id = 'webllm' as const;
@@ -84,11 +96,10 @@ export class WebLLMRuntime implements RuntimeBackend {
       return false;
     }
 
-    const deviceMemory = nav.deviceMemory ?? null;
     this.diag = {
       ...this.diag,
       browserCompatible: true,
-      memoryEstimateGB: deviceMemory,
+      memoryEstimateGB: nav.deviceMemory ?? null,
     };
     return true;
   }
@@ -102,51 +113,39 @@ export class WebLLMRuntime implements RuntimeBackend {
     const deviceMem = this.diag.memoryEstimateGB;
     this.diag = { ...this.diag, stage: 'checking-memory' };
     if (deviceMem !== null && deviceMem < target.estimatedRuntimeMemoryGB) {
-      this.diag = {
-        ...this.diag,
-        memorySufficient: false,
-        failureReason: `Insufficient memory: device reports ${deviceMem} GB, model needs ~${target.estimatedRuntimeMemoryGB} GB.`,
-        failureStage: 'checking-memory',
-        stage: 'failed',
-      };
-      throw new Error(this.diag.failureReason || 'Insufficient memory');
+      const reason = `Insufficient memory: device reports ${deviceMem} GB, model needs ~${target.estimatedRuntimeMemoryGB} GB.`;
+      this.diag = { ...this.diag, memorySufficient: false, failureReason: reason, failureStage: 'checking-memory', stage: 'failed' };
+      throw new Error(reason);
     }
     this.diag = { ...this.diag, memorySufficient: deviceMem === null ? null : true };
 
     this.diag = { ...this.diag, stage: 'checking-artifacts' };
-    if (!target.artifacts) {
-      this.diag = {
-        ...this.diag,
-        artifactsAvailable: false,
-        failureReason: 'No artifact URLs configured for this deployment target.',
-        failureStage: 'checking-artifacts',
-        stage: 'failed',
-      };
-      throw new Error(this.diag.failureReason || 'No artifacts');
+
+    if (!target.artifacts || !target.artifacts.mlc) {
+      const reason = 'Model artifacts not configured. STEP-3-VL-10B MLC-format weights have not been published yet. Required files: ndarray-cache.json, tokenizer.json, mlc-chat-config.json, model library WASM, weight shards.';
+      this.diag = { ...this.diag, artifactsAvailable: false, failureReason: reason, failureStage: 'checking-artifacts', stage: 'failed' };
+      throw new Error(reason);
     }
 
-    try {
-      const response = await fetch(target.artifacts.modelUrl, { method: 'HEAD' });
-      if (!response.ok) {
-        this.diag = {
-          ...this.diag,
-          artifactsAvailable: false,
-          failureReason: `Model artifacts not found at ${target.artifacts.modelUrl} (HTTP ${response.status}).`,
-          failureStage: 'checking-artifacts',
-          stage: 'failed',
-        };
-        throw new Error(this.diag.failureReason || 'Artifacts not found');
-      }
-    } catch (e) {
-      if (this.diag.stage === 'failed') throw e;
-      const reason = `Cannot reach model artifacts: ${e instanceof Error ? e.message : String(e)}`;
-      this.diag = {
-        ...this.diag,
-        artifactsAvailable: false,
-        failureReason: reason,
-        failureStage: 'checking-artifacts',
-        stage: 'failed',
-      };
+    const mlc = target.artifacts.mlc;
+    const checks = await Promise.all([
+      checkUrl('mlc-chat-config.json', mlc.mlcChatConfigUrl),
+      checkUrl('tokenizer.json', mlc.tokenizerUrl),
+      checkUrl('model library (.wasm)', mlc.modelLibWasmUrl),
+      checkUrl('weight index (ndarray-cache)', mlc.modelWeightsUrl + 'ndarray-cache.json'),
+    ]);
+
+    this.diag = { ...this.diag, artifactChecks: checks };
+
+    const failures = checks.filter((c) => c.status !== 'ok');
+    if (failures.length > 0) {
+      const details = failures.map((f) => {
+        if (f.status === 'forbidden') return `${f.file}: access denied (HTTP ${f.httpStatus})`;
+        if (f.status === 'missing') return `${f.file}: not found (HTTP ${f.httpStatus})`;
+        return `${f.file}: unreachable`;
+      });
+      const reason = `Model artifacts ${failures.some((f) => f.status === 'forbidden') ? 'private or' : ''} missing:\n${details.join('\n')}`;
+      this.diag = { ...this.diag, artifactsAvailable: false, failureReason: reason, failureStage: 'checking-artifacts', stage: 'failed' };
       throw new Error(reason);
     }
     this.diag = { ...this.diag, artifactsAvailable: true };
@@ -159,26 +158,19 @@ export class WebLLMRuntime implements RuntimeBackend {
       CreateMLCEngine = webllm.CreateMLCEngine as unknown as CreateMLCEngineFn;
     } catch (e) {
       const reason = `Failed to load web-llm runtime: ${e instanceof Error ? e.message : String(e)}`;
-      this.diag = {
-        ...this.diag,
-        failureReason: reason,
-        failureStage: 'downloading',
-        stage: 'failed',
-      };
+      this.diag = { ...this.diag, failureReason: reason, failureStage: 'downloading', stage: 'failed' };
       throw new Error(reason);
     }
 
     this.diag = { ...this.diag, stage: 'initializing' };
     try {
-      this.engine = await CreateMLCEngine(target.artifacts.mlcModelId, {
+      this.engine = await CreateMLCEngine(mlc.mlcModelId, {
         appConfig: {
-          model_list: [
-            {
-              model: target.artifacts.modelUrl,
-              model_id: target.artifacts.mlcModelId,
-              model_lib: target.artifacts.modelLibUrl,
-            },
-          ],
+          model_list: [{
+            model: mlc.modelWeightsUrl,
+            model_id: mlc.mlcModelId,
+            model_lib: mlc.modelLibWasmUrl,
+          }],
         },
         initProgressCallback: (report) => {
           this.diag = { ...this.diag, downloadProgress: report.progress };
@@ -186,12 +178,7 @@ export class WebLLMRuntime implements RuntimeBackend {
       });
     } catch (e) {
       const reason = `Runtime init failed: ${e instanceof Error ? e.message : String(e)}`;
-      this.diag = {
-        ...this.diag,
-        failureReason: reason,
-        failureStage: 'initializing',
-        stage: 'failed',
-      };
+      this.diag = { ...this.diag, failureReason: reason, failureStage: 'initializing', stage: 'failed' };
       throw new Error(reason);
     }
 

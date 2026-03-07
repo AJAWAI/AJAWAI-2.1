@@ -2,7 +2,7 @@ import { Activity, Cpu, HardDrive, Zap, Loader, WifiOff, Brain, AlertTriangle } 
 import { useSettingsStore } from '../../store/settingsStore';
 import { useModelStore } from '../../store/modelStore';
 import { useChatStore } from '../../store/chatStore';
-import { STEP_TARGET } from '../../ai/modelProfiles';
+import { STEP_TARGET, getArtifactStatus } from '../../ai/modelProfiles';
 import styles from './DebugPanel.module.css';
 
 const STATUS_DISPLAY: Record<string, string> = {
@@ -17,12 +17,19 @@ const STATUS_DISPLAY: Record<string, string> = {
 const STAGE_DISPLAY: Record<string, string> = {
   'idle': 'Idle',
   'checking-browser': 'Checking browser…',
-  'checking-artifacts': 'Checking model artifacts…',
-  'checking-memory': 'Checking device memory…',
+  'checking-artifacts': 'Checking artifacts…',
+  'checking-memory': 'Checking memory…',
   'downloading': 'Downloading model…',
   'initializing': 'Initializing runtime…',
   'ready': 'Ready',
   'failed': 'Failed',
+};
+
+const ARTIFACT_STATUS_LABEL: Record<string, string> = {
+  'not-configured': 'Not configured — awaiting public model files',
+  'configured': 'URLs configured — not yet validated',
+  'validated': 'Validated',
+  'invalid': 'Invalid — missing required URLs',
 };
 
 export function DebugPanel() {
@@ -41,6 +48,8 @@ export function DebugPanel() {
   if (!show) return null;
 
   const hasDiag = diagnostics.stage !== 'idle';
+  const artifactStatus = getArtifactStatus(STEP_TARGET.artifacts, STEP_TARGET.preferredRuntime);
+  const artifactsReady = artifactStatus === 'configured' || artifactStatus === 'validated';
 
   return (
     <div className={styles.panel}>
@@ -58,11 +67,11 @@ export function DebugPanel() {
           <div className={styles.grid}>
             <span>WebGPU</span>
             <span className={capabilities.webgpu ? styles.good : styles.muted}>
-              {capabilities.webgpu ? 'Yes' : 'No'}
+              {capabilities.webgpu ? 'Supported' : 'Unsupported'}
             </span>
             <span>WASM</span>
             <span className={capabilities.wasm ? styles.good : styles.muted}>
-              {capabilities.wasm ? 'Yes' : 'No'}
+              {capabilities.wasm ? 'Supported' : 'Unsupported'}
             </span>
             <span>Memory</span>
             <span>{capabilities.deviceMemory ? `${capabilities.deviceMemory} GB` : 'N/A'}</span>
@@ -88,8 +97,8 @@ export function DebugPanel() {
           <span>Runtime</span>
           <span>{STEP_TARGET.preferredRuntime}</span>
           <span>Artifacts</span>
-          <span className={STEP_TARGET.artifacts ? styles.good : styles.warn}>
-            {STEP_TARGET.artifacts ? 'Configured' : 'Missing'}
+          <span className={artifactsReady ? styles.good : styles.warn}>
+            {ARTIFACT_STATUS_LABEL[artifactStatus]}
           </span>
           <span>Status</span>
           <span data-status={modelStatus} className={styles.statusBadge}>
@@ -98,11 +107,7 @@ export function DebugPanel() {
           </span>
           <span>Connected</span>
           <span className={runtimeConnected ? styles.good : styles.warn}>
-            {runtimeConnected ? (
-              'Yes'
-            ) : (
-              <><WifiOff size={10} /> No</>
-            )}
+            {runtimeConnected ? 'Yes' : <><WifiOff size={10} /> No</>}
           </span>
           {loadTimeMs != null && (
             <>
@@ -114,7 +119,7 @@ export function DebugPanel() {
         <div className={styles.actions}>
           {(modelStatus === 'not-loaded' || modelStatus === 'error') && (
             <button className={styles.actionBtn} onClick={() => loadModel()}>
-              {modelStatus === 'error' ? 'Retry Connection' : 'Connect STEP'}
+              {modelStatus === 'error' ? 'Retry' : 'Connect STEP'}
             </button>
           )}
           {modelStatus === 'loading' && (
@@ -128,6 +133,12 @@ export function DebugPanel() {
             </button>
           )}
         </div>
+
+        {!artifactsReady && modelStatus !== 'loading' && (
+          <p className={styles.noticeBox}>
+            Runtime blocked by missing public model files. STEP-3-VL-10B has not been published in MLC-compiled format. Once artifacts are hosted, configure URLs in <code>modelProfiles.ts</code>.
+          </p>
+        )}
       </div>
 
       {hasDiag && (
@@ -136,23 +147,23 @@ export function DebugPanel() {
             <AlertTriangle size={12} /> Connection Diagnostics
           </h4>
           <div className={styles.grid}>
-            <span>Runtime Path</span>
+            <span>Runtime</span>
             <span>{diagnostics.runtimePath}</span>
             <span>Stage</span>
             <span className={diagnostics.stage === 'failed' ? styles.errorText : undefined}>
               {STAGE_DISPLAY[diagnostics.stage] ?? diagnostics.stage}
             </span>
-            <span>Browser OK</span>
+            <span>Browser</span>
             <span className={diagnostics.browserCompatible === false ? styles.errorText : diagnostics.browserCompatible ? styles.good : styles.muted}>
-              {diagnostics.browserCompatible === null ? '—' : diagnostics.browserCompatible ? 'Yes' : 'No'}
+              {diagnostics.browserCompatible === null ? '—' : diagnostics.browserCompatible ? 'Supported' : 'Unsupported'}
             </span>
-            <span>Artifacts OK</span>
+            <span>Artifacts</span>
             <span className={diagnostics.artifactsAvailable === false ? styles.errorText : diagnostics.artifactsAvailable ? styles.good : styles.muted}>
-              {diagnostics.artifactsAvailable === null ? '—' : diagnostics.artifactsAvailable ? 'Yes' : 'No'}
+              {diagnostics.artifactsAvailable === null ? '—' : diagnostics.artifactsAvailable ? 'Available' : 'Missing / Private'}
             </span>
-            <span>Memory OK</span>
+            <span>Memory</span>
             <span className={diagnostics.memorySufficient === false ? styles.errorText : diagnostics.memorySufficient ? styles.good : styles.muted}>
-              {diagnostics.memorySufficient === null ? '—' : diagnostics.memorySufficient ? 'Yes' : 'No'}
+              {diagnostics.memorySufficient === null ? '—' : diagnostics.memorySufficient ? 'Sufficient' : 'Insufficient'}
             </span>
             {diagnostics.memoryEstimateGB !== null && (
               <>
@@ -167,6 +178,24 @@ export function DebugPanel() {
               </>
             )}
           </div>
+
+          {diagnostics.artifactChecks.length > 0 && (
+            <>
+              <h4 className={styles.sectionTitle} style={{ marginTop: 8 }}>Artifact File Checks</h4>
+              <div className={styles.grid}>
+                {diagnostics.artifactChecks.map((c) => (
+                  <span key={c.file} className={styles.artifactRow} data-status={c.status}>
+                    <span className={c.status === 'ok' ? styles.good : styles.errorText}>
+                      {c.status === 'ok' ? '✓' : c.status === 'forbidden' ? '🔒' : '✗'}
+                    </span>
+                    {' '}{c.file}
+                    {c.httpStatus ? ` (${c.httpStatus})` : ''}
+                  </span>
+                ))}
+              </div>
+            </>
+          )}
+
           {error && (
             <p className={styles.failureBox}>
               <strong>Failed at: {diagnostics.failureStage ?? 'unknown'}</strong><br />
@@ -190,7 +219,7 @@ export function DebugPanel() {
             <span>Single-pass</span>
             <span>Memory Items</span>
             <span>{metrics.memoryItemsInjected}</span>
-            <span>Recent Turns</span>
+            <span>Turns</span>
             <span>{metrics.recentTurnsIncluded}</span>
           </div>
 
@@ -198,16 +227,11 @@ export function DebugPanel() {
             <Zap size={12} /> Budget ({metrics.budgetUsage.total}/{STEP_TARGET.contextWindow - STEP_TARGET.maxOutputTokens})
           </h4>
           <div className={styles.grid}>
-            <span>System</span>
-            <span>{metrics.budgetUsage.system}</span>
-            <span>Memory</span>
-            <span>{metrics.budgetUsage.memory}</span>
-            <span>History</span>
-            <span>{metrics.budgetUsage.history}</span>
-            <span>Current</span>
-            <span>{metrics.budgetUsage.currentMessage}</span>
-            <span>Latency</span>
-            <span>{metrics.totalLatencyMs?.toFixed(0) ?? '–'} ms</span>
+            <span>System</span><span>{metrics.budgetUsage.system}</span>
+            <span>Memory</span><span>{metrics.budgetUsage.memory}</span>
+            <span>History</span><span>{metrics.budgetUsage.history}</span>
+            <span>Current</span><span>{metrics.budgetUsage.currentMessage}</span>
+            <span>Latency</span><span>{metrics.totalLatencyMs?.toFixed(0) ?? '–'} ms</span>
           </div>
         </div>
       )}

@@ -12,11 +12,19 @@ export type ConnectionStage =
   | 'ready'
   | 'failed';
 
+export interface ArtifactCheckResult {
+  file: string;
+  url: string;
+  status: 'ok' | 'missing' | 'forbidden' | 'error';
+  httpStatus: number | null;
+}
+
 export interface ConnectionDiagnostics {
   runtimePath: RuntimeId;
   stage: ConnectionStage;
   browserCompatible: boolean | null;
   artifactsAvailable: boolean | null;
+  artifactChecks: ArtifactCheckResult[];
   memoryEstimateGB: number | null;
   memorySufficient: boolean | null;
   failureReason: string | null;
@@ -30,6 +38,7 @@ export function emptyDiagnostics(runtimeId: RuntimeId): ConnectionDiagnostics {
     stage: 'idle',
     browserCompatible: null,
     artifactsAvailable: null,
+    artifactChecks: [],
     memoryEstimateGB: null,
     memorySufficient: null,
     failureReason: null,
