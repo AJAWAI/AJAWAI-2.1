@@ -1,4 +1,4 @@
-import { Activity, Cpu, HardDrive, Loader, WifiOff, Brain, AlertTriangle } from 'lucide-react';
+import { Activity, Cpu, HardDrive, Loader, Brain, AlertTriangle } from 'lucide-react';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useModelStore } from '../../store/modelStore';
 import { useChatStore } from '../../store/chatStore';
@@ -7,22 +7,14 @@ import { STEP_GGUF_ARTIFACTS, DEFAULT_GGUF_VARIANT } from '../../ai/ggufArtifact
 import type { RuntimeId } from '../../ai/runtimeTypes';
 import styles from './DebugPanel.module.css';
 
-const STATUS_DISPLAY: Record<string, string> = {
-  'not-loaded': 'Not Loaded',
-  'runtime-unavailable': 'Not Connected',
-  'loading': 'Connecting…',
-  'ready': 'STEP Ready',
-  'generating': 'Generating…',
-  'error': 'Error',
-};
-
-const STAGE_DISPLAY: Record<string, string> = {
+const STAGE_LABELS: Record<string, string> = {
   'idle': 'Idle',
-  'checking-browser': 'Checking browser…',
-  'checking-artifacts': 'Checking artifacts…',
-  'checking-memory': 'Checking memory…',
-  'downloading': 'Downloading model…',
-  'initializing': 'Initializing…',
+  'checking-browser': 'Checking browser',
+  'checking-artifacts': 'Checking artifacts',
+  'checking-memory': 'Checking memory',
+  'loading-runtime': 'Loading WASM runtime',
+  'downloading-model': 'Downloading model',
+  'loading-model': 'Loading into memory',
   'ready': 'Ready',
   'failed': 'Failed',
 };
@@ -44,46 +36,35 @@ export function DebugPanel() {
 
   if (!show) return null;
 
-  const hasDiag = diagnostics.stage !== 'idle';
   const isIdle = modelStatus === 'not-loaded' || modelStatus === 'error';
-  const wllamaDiag = diagnostics as unknown as Record<string, unknown>;
+  const isLoading = modelStatus === 'loading';
+  const d = diagnostics;
+  const hasDiag = d.stage !== 'idle';
+  const ggufCfg = STEP_GGUF_ARTIFACTS[DEFAULT_GGUF_VARIANT];
+  const wllamaDiag = d as unknown as Record<string, unknown>;
 
   return (
     <div className={styles.panel}>
       <h3 className={styles.title}>
-        <Activity size={14} /> Debug Panel
+        <Activity size={14} /> Debug
       </h3>
 
       <div className={styles.section}>
-        <h4 className={styles.sectionTitle}>
-          <Cpu size={12} /> Device
-        </h4>
+        <h4 className={styles.sectionTitle}><Cpu size={12} /> Device</h4>
         {capLoading ? (
           <p className={styles.muted}>Detecting…</p>
         ) : capabilities ? (
           <div className={styles.grid}>
-            <span>WebGPU</span>
-            <span className={capabilities.webgpu ? styles.good : styles.muted}>
-              {capabilities.webgpu ? 'Yes' : 'No'}
-            </span>
-            <span>WASM</span>
-            <span className={capabilities.wasm ? styles.good : styles.muted}>
-              {capabilities.wasm ? 'Yes' : 'No'}
-            </span>
-            <span>Memory</span>
-            <span>{capabilities.deviceMemory ? `${capabilities.deviceMemory} GB` : 'N/A'}</span>
-            <span>Cores</span>
-            <span>{capabilities.hardwareConcurrency}</span>
+            <span>WebGPU</span><span className={capabilities.webgpu ? styles.good : styles.muted}>{capabilities.webgpu ? 'Yes' : 'No'}</span>
+            <span>WASM</span><span className={capabilities.wasm ? styles.good : styles.muted}>{capabilities.wasm ? 'Yes' : 'No'}</span>
+            <span>Memory</span><span>{capabilities.deviceMemory ? `${capabilities.deviceMemory} GB` : 'N/A'}</span>
+            <span>Cores</span><span>{capabilities.hardwareConcurrency}</span>
           </div>
-        ) : (
-          <p className={styles.muted}>Not detected</p>
-        )}
+        ) : <p className={styles.muted}>Not detected</p>}
       </div>
 
       <div className={styles.section}>
-        <h4 className={styles.sectionTitle}>
-          <HardDrive size={12} /> Runtime Selection
-        </h4>
+        <h4 className={styles.sectionTitle}><HardDrive size={12} /> Runtime</h4>
         <div className={styles.runtimePicker}>
           {(['webllm', 'wllama'] as RuntimeId[]).map((rt) => (
             <button
@@ -98,37 +79,46 @@ export function DebugPanel() {
         </div>
 
         <div className={styles.grid} style={{ marginTop: 8 }}>
-          <span>Model</span>
-          <span>{STEP_TARGET.modelName}</span>
-          <span>Runtime</span>
-          <span className={styles.good}>{selectedRuntime}</span>
-          {selectedRuntime === 'wllama' && (() => {
-            const cfg = STEP_GGUF_ARTIFACTS[DEFAULT_GGUF_VARIANT];
-            return cfg ? (
-              <>
-                <span>GGUF</span>
-                <span>{cfg.quantization} ({cfg.fileMode})</span>
-                <span>File Size</span>
-                <span>{(cfg.fileSizeBytes / 1e9).toFixed(2)} GB</span>
-              </>
-            ) : null;
-          })()}
-          <span>Context</span>
-          <span>{STEP_TARGET.contextWindow} tokens</span>
+          <span>Model</span><span>{STEP_TARGET.modelName}</span>
+          <span>Runtime</span><span className={styles.good}>{selectedRuntime}</span>
+          {selectedRuntime === 'wllama' && ggufCfg && (
+            <>
+              <span>GGUF</span><span>{ggufCfg.quantization} ({ggufCfg.fileMode})</span>
+              <span>File</span><span>{(ggufCfg.fileSizeBytes / 1e9).toFixed(2)} GB</span>
+              <span>Est. RAM</span><span>~{ggufCfg.estimatedRuntimeGB} GB</span>
+            </>
+          )}
+          <span>Context</span><span>{STEP_TARGET.contextWindow} tokens</span>
+        </div>
+
+        {isLoading && d.subStatus && (
+          <div className={styles.liveStatus}>
+            <Loader size={12} className={styles.spin} />
+            <span>{d.subStatus}</span>
+          </div>
+        )}
+
+        {isLoading && d.downloadProgress > 0 && d.downloadProgress < 1 && (
+          <div className={styles.progressBar}>
+            <div className={styles.progressFill} style={{ width: `${(d.downloadProgress * 100).toFixed(1)}%` }} />
+          </div>
+        )}
+
+        {isLoading && d.elapsedMs > 0 && (
+          <p className={styles.muted} style={{ marginTop: 4, fontSize: 10 }}>
+            Elapsed: {(d.elapsedMs / 1000).toFixed(1)}s
+            {d.downloadedBytes > 0 && ` · ${(d.downloadedBytes / 1e6).toFixed(0)} MB downloaded`}
+          </p>
+        )}
+
+        <div className={styles.grid} style={{ marginTop: 6 }}>
           <span>Status</span>
           <span data-status={modelStatus} className={styles.statusBadge}>
-            {modelStatus === 'loading' && <Loader size={10} className={styles.spin} />}
-            {STATUS_DISPLAY[modelStatus] ?? modelStatus}
-          </span>
-          <span>Connected</span>
-          <span className={runtimeConnected ? styles.good : styles.warn}>
-            {runtimeConnected ? 'Yes' : <><WifiOff size={10} /> No</>}
+            {isLoading && <Loader size={10} className={styles.spin} />}
+            {runtimeConnected ? 'STEP Ready' : isLoading ? (STAGE_LABELS[d.stage] ?? d.stage) : modelStatus === 'error' ? 'Error' : 'Not Loaded'}
           </span>
           {loadTimeMs != null && (
-            <>
-              <span>Load Time</span>
-              <span>{(loadTimeMs / 1000).toFixed(1)} s</span>
-            </>
+            <><span>Load Time</span><span>{(loadTimeMs / 1000).toFixed(1)}s</span></>
           )}
         </div>
 
@@ -138,65 +128,49 @@ export function DebugPanel() {
               {modelStatus === 'error' ? 'Retry' : 'Connect STEP'}
             </button>
           )}
-          {modelStatus === 'loading' && (
-            <span className={styles.muted}>
-              <Loader size={12} className={styles.spin} /> Connecting…
-            </span>
+          {modelStatus === 'error' && (
+            <button className={styles.actionBtnSecondary} onClick={unloadModel} style={{ marginLeft: 8 }}>
+              Reset
+            </button>
           )}
           {runtimeConnected && (
             <button className={styles.actionBtnSecondary} onClick={unloadModel}>
               Disconnect
             </button>
           )}
-          {modelStatus === 'error' && (
-            <button className={styles.actionBtnSecondary} onClick={unloadModel} style={{ marginLeft: 8 }}>
-              Reset
-            </button>
-          )}
         </div>
       </div>
 
-      {hasDiag && (
+      {hasDiag && d.stage !== 'ready' && (
         <div className={styles.section}>
-          <h4 className={styles.sectionTitle}>
-            <AlertTriangle size={12} /> Diagnostics
-          </h4>
+          <h4 className={styles.sectionTitle}><AlertTriangle size={12} /> Diagnostics</h4>
           <div className={styles.grid}>
-            <span>Runtime</span>
-            <span>{diagnostics.runtimePath}</span>
             <span>Stage</span>
-            <span className={diagnostics.stage === 'failed' ? styles.errorText : undefined}>
-              {STAGE_DISPLAY[diagnostics.stage] ?? diagnostics.stage}
+            <span className={d.stage === 'failed' ? styles.errorText : undefined}>
+              {STAGE_LABELS[d.stage] ?? d.stage}
             </span>
             <span>Browser</span>
-            <span className={diagnostics.browserCompatible === false ? styles.errorText : diagnostics.browserCompatible ? styles.good : styles.muted}>
-              {diagnostics.browserCompatible === null ? '—' : diagnostics.browserCompatible ? 'OK' : 'Unsupported'}
+            <span className={d.browserCompatible === false ? styles.errorText : d.browserCompatible ? styles.good : styles.muted}>
+              {d.browserCompatible === null ? '—' : d.browserCompatible ? 'OK' : 'Unsupported'}
             </span>
             <span>Artifacts</span>
-            <span className={diagnostics.artifactsAvailable === false ? styles.errorText : diagnostics.artifactsAvailable ? styles.good : styles.muted}>
-              {diagnostics.artifactsAvailable === null ? '—' : diagnostics.artifactsAvailable ? 'OK' : 'Missing'}
+            <span className={d.artifactsAvailable === false ? styles.errorText : d.artifactsAvailable ? styles.good : styles.muted}>
+              {d.artifactsAvailable === null ? '—' : d.artifactsAvailable ? 'OK' : 'Missing'}
             </span>
             <span>Memory</span>
-            <span className={diagnostics.memorySufficient === false ? styles.errorText : diagnostics.memorySufficient ? styles.good : styles.muted}>
-              {diagnostics.memorySufficient === null ? '—' : diagnostics.memorySufficient ? 'OK' : 'Low'}
+            <span className={d.memorySufficient === false ? styles.errorText : d.memorySufficient ? styles.good : styles.muted}>
+              {d.memorySufficient === null ? (d.memoryEstimateGB ? `${d.memoryEstimateGB} GB (unchecked)` : '—') : d.memorySufficient ? `${d.memoryEstimateGB ?? '?'} GB OK` : 'Low'}
             </span>
-            {diagnostics.downloadProgress > 0 && diagnostics.downloadProgress < 1 && (
-              <>
-                <span>Download</span>
-                <span>{(diagnostics.downloadProgress * 100).toFixed(0)}%</span>
-              </>
-            )}
           </div>
 
           {Array.isArray(wllamaDiag['artifactChecks']) && (wllamaDiag['artifactChecks'] as Array<{label: string; reachable: boolean; error: string | null; contentLength: number | null}>).length > 0 && (
             <>
-              <h4 className={styles.sectionTitle} style={{ marginTop: 6 }}>Artifact Checks</h4>
+              <h4 className={styles.sectionTitle} style={{ marginTop: 6 }}>Artifacts</h4>
               {(wllamaDiag['artifactChecks'] as Array<{label: string; reachable: boolean; error: string | null; contentLength: number | null}>).map((c, i) => (
                 <div key={i} className={styles.artifactRow}>
                   <span className={c.reachable ? styles.good : styles.errorText}>
                     {c.reachable ? '✓' : '✗'}
-                  </span>{' '}
-                  {c.label}
+                  </span>{' '}{c.label}
                   {c.contentLength ? ` (${(c.contentLength / 1e9).toFixed(2)} GB)` : ''}
                   {!c.reachable && c.error ? ` — ${c.error}` : ''}
                 </div>
@@ -205,8 +179,7 @@ export function DebugPanel() {
                 <div className={styles.artifactRow}>
                   <span className={(wllamaDiag['mmprojCheck'] as {reachable: boolean}).reachable ? styles.good : styles.muted}>
                     {(wllamaDiag['mmprojCheck'] as {reachable: boolean}).reachable ? '✓' : '—'}
-                  </span>{' '}
-                  mmproj (optional for text)
+                  </span>{' '}mmproj (optional)
                 </div>
               )}
             </>
@@ -214,8 +187,9 @@ export function DebugPanel() {
 
           {error && (
             <p className={styles.failureBox}>
-              <strong>Failed at: {diagnostics.failureStage ?? 'unknown'}</strong><br />
-              {error}
+              <strong>Failed at: {d.failureStage ? (STAGE_LABELS[d.failureStage] ?? d.failureStage) : 'unknown'}</strong>
+              {d.elapsedMs > 0 && ` (${(d.elapsedMs / 1000).toFixed(1)}s)`}
+              <br />{error}
             </p>
           )}
         </div>
@@ -223,22 +197,15 @@ export function DebugPanel() {
 
       {metrics && (
         <div className={styles.section}>
-          <h4 className={styles.sectionTitle}>
-            <Brain size={12} /> Last Generation
-          </h4>
+          <h4 className={styles.sectionTitle}><Brain size={12} /> Last Generation</h4>
           <div className={styles.grid}>
             <span>Source</span>
             <span className={metrics.generationSource === 'step' ? styles.good : styles.warn}>
               {metrics.generationSource === 'step' ? 'STEP-3-VL-10B' : 'Unavailable'}
             </span>
-            <span>Mode</span>
-            <span>Single-pass</span>
-            <span>Memory</span>
-            <span>{metrics.memoryItemsInjected} items</span>
-            <span>Turns</span>
-            <span>{metrics.recentTurnsIncluded}</span>
-            <span>Latency</span>
-            <span>{metrics.totalLatencyMs?.toFixed(0) ?? '–'} ms</span>
+            <span>Mode</span><span>Single-pass</span>
+            <span>Memory</span><span>{metrics.memoryItemsInjected} items</span>
+            <span>Latency</span><span>{metrics.totalLatencyMs?.toFixed(0) ?? '–'} ms</span>
           </div>
         </div>
       )}

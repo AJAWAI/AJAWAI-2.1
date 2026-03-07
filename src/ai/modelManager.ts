@@ -60,9 +60,20 @@ export async function loadModel(ggufVariant?: string): Promise<void> {
   const runtime = createRuntime(runtimeId, ggufVariant);
   const start = performance.now();
 
+  const pollInterval = setInterval(() => {
+    const diag = runtime.getDiagnostics();
+    if (diag.stage !== state.diagnostics.stage ||
+        diag.subStatus !== state.diagnostics.subStatus ||
+        Math.abs(diag.downloadProgress - state.diagnostics.downloadProgress) > 0.005) {
+      state = { ...state, diagnostics: diag };
+      notify();
+    }
+  }, 250);
+
   try {
     await runtime.initialize(STEP_TARGET);
 
+    clearInterval(pollInterval);
     setActiveRuntime(runtime);
     const loadTimeMs = performance.now() - start;
 
@@ -76,6 +87,7 @@ export async function loadModel(ggufVariant?: string): Promise<void> {
       selectedRuntime: runtimeId,
     };
   } catch (e) {
+    clearInterval(pollInterval);
     setActiveRuntime(null);
     const diag = runtime.getDiagnostics();
     const errorMsg = e instanceof Error ? e.message : `Failed to load ${STEP_TARGET.modelName}`;
