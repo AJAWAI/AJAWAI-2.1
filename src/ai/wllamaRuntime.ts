@@ -159,7 +159,7 @@ export class WllamaRuntime implements RuntimeBackend {
     this.diag.subStatus = 'Wllama module loaded, creating instance';
 
     try {
-      const wllamaBase = 'https://cdn.jsdelivr.net/npm/@wllama/wllama@2.3.7/esm/';
+      const wllamaBase = 'https://cdn.jsdelivr.net/npm/@wllama/wllama@2.3.7/src/';
       this.instance = new WllamaClass({
         'single-thread/wllama.js': wllamaBase + 'single-thread/wllama.js',
         'multi-thread/wllama.js': wllamaBase + 'multi-thread/wllama.js',
