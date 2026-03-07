@@ -3,7 +3,7 @@ import { useSettingsStore } from '../../store/settingsStore';
 import { useModelStore } from '../../store/modelStore';
 import { useChatStore } from '../../store/chatStore';
 import { STEP_TARGET } from '../../ai/modelProfiles';
-import { STEP_GGUF_ARTIFACTS } from '../../ai/ggufArtifacts';
+import { STEP_GGUF_ARTIFACTS, DEFAULT_GGUF_VARIANT } from '../../ai/ggufArtifacts';
 import type { RuntimeId } from '../../ai/runtimeTypes';
 import styles from './DebugPanel.module.css';
 
@@ -102,14 +102,17 @@ export function DebugPanel() {
           <span>{STEP_TARGET.modelName}</span>
           <span>Runtime</span>
           <span className={styles.good}>{selectedRuntime}</span>
-          {selectedRuntime === 'wllama' && (
-            <>
-              <span>GGUF</span>
-              <span>{STEP_GGUF_ARTIFACTS['q4_k_m']?.quantization ?? '—'}</span>
-              <span>File Size</span>
-              <span>~{STEP_GGUF_ARTIFACTS['q4_k_m']?.estimatedSizeGB ?? '?'} GB</span>
-            </>
-          )}
+          {selectedRuntime === 'wllama' && (() => {
+            const cfg = STEP_GGUF_ARTIFACTS[DEFAULT_GGUF_VARIANT];
+            return cfg ? (
+              <>
+                <span>GGUF</span>
+                <span>{cfg.quantization} ({cfg.fileMode})</span>
+                <span>File Size</span>
+                <span>{(cfg.fileSizeBytes / 1e9).toFixed(2)} GB</span>
+              </>
+            ) : null;
+          })()}
           <span>Context</span>
           <span>{STEP_TARGET.contextWindow} tokens</span>
           <span>Status</span>
