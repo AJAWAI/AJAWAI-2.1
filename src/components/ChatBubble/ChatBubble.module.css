@@ -1,0 +1,53 @@
+.row {
+  display: flex;
+  gap: 10px;
+  padding: 4px 0;
+  align-items: flex-start;
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.userRow {
+  flex-direction: row-reverse;
+}
+
+.avatar {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-full);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.userAvatar {
+  background: var(--color-mint-gradient);
+  color: white;
+}
+
+.aiAvatar {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-secondary);
+}
+
+.bubble {
+  padding: 10px 14px;
+  border-radius: var(--radius-lg);
+  font-size: 14px;
+  line-height: 1.55;
+  max-width: 75%;
+  word-wrap: break-word;
+}
+
+.userBubble {
+  background: var(--color-user-bubble);
+  color: var(--color-user-text);
+  border-bottom-right-radius: 4px;
+}
+
+.aiBubble {
+  background: var(--color-ai-bubble);
+  color: var(--color-ai-text);
+  border-bottom-left-radius: 4px;
+}
