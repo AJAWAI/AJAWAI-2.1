@@ -157,10 +157,28 @@ export function DebugPanel() {
             <span className={d.artifactsAvailable === false ? styles.errorText : d.artifactsAvailable ? styles.good : styles.muted}>
               {d.artifactsAvailable === null ? '—' : d.artifactsAvailable ? 'OK' : 'Missing'}
             </span>
-            <span>Memory</span>
+            <span>RAM</span>
             <span className={d.memorySufficient === false ? styles.errorText : d.memorySufficient ? styles.good : styles.muted}>
-              {d.memorySufficient === null ? (d.memoryEstimateGB ? `${d.memoryEstimateGB} GB (unchecked)` : '—') : d.memorySufficient ? `${d.memoryEstimateGB ?? '?'} GB OK` : 'Low'}
+              {d.memorySufficient === null ? (d.memoryEstimateGB ? `${d.memoryEstimateGB} GB` : '—') : d.memorySufficient ? `${d.memoryEstimateGB ?? '?'} GB OK` : 'Low'}
             </span>
+            {(wllamaDiag['quotaAvailableGB'] as number | null) !== null && (
+              <>
+                <span>Storage</span>
+                <span>{(wllamaDiag['quotaAvailableGB'] as number).toFixed(1)} GB free / {(wllamaDiag['quotaTotalGB'] as number)?.toFixed(1) ?? '?'} GB</span>
+              </>
+            )}
+            {Boolean(wllamaDiag['installedLocally']) && (
+              <>
+                <span>Cache</span>
+                <span className={styles.good}>Installed ({String(wllamaDiag['storageBackend'])})</span>
+              </>
+            )}
+            {wllamaDiag['loadSource'] !== undefined && wllamaDiag['loadSource'] !== 'unknown' && (
+              <>
+                <span>Source</span>
+                <span>{wllamaDiag['loadSource'] === 'cache' ? 'Local cache' : 'Network download'}</span>
+              </>
+            )}
           </div>
 
           {Array.isArray(wllamaDiag['artifactChecks']) && (wllamaDiag['artifactChecks'] as Array<{label: string; reachable: boolean; error: string | null; contentLength: number | null}>).length > 0 && (
