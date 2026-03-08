@@ -86,9 +86,13 @@ export function DebugPanel() {
               <span>GGUF</span><span>{ggufCfg.quantization} ({ggufCfg.fileMode})</span>
               <span>File</span><span>{(ggufCfg.fileSizeBytes / 1e9).toFixed(2)} GB</span>
               <span>Est. RAM</span><span>~{ggufCfg.estimatedRuntimeGB} GB</span>
+              <span>Context</span><span>{ggufCfg.contextWindow} tokens</span>
+              <span>Max Out</span><span>{ggufCfg.maxOutputTokens} tokens</span>
             </>
           )}
-          <span>Context</span><span>{STEP_TARGET.contextWindow} tokens</span>
+          {selectedRuntime !== 'wllama' && (
+            <><span>Context</span><span>{STEP_TARGET.contextWindow} tokens</span></>
+          )}
         </div>
 
         {isLoading && d.subStatus && (
