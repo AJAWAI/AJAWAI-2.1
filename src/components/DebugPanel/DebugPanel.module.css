@@ -222,3 +222,14 @@
   border-radius: 3px;
   transition: width 0.3s ease;
 }
+
+.warnBox {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: #fef3cd;
+  border-radius: var(--radius-sm);
+  color: #856404;
+  font-size: 11px;
+  line-height: 1.5;
+  word-break: break-word;
+}

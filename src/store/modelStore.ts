@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { DeviceCapabilities, ModelStatus } from '../lib/types';
-import type { ConnectionDiagnostics, RuntimeId } from '../ai/runtimeTypes';
+import type { ConnectionDiagnostics } from '../ai/runtimeTypes';
 import { emptyDiagnostics } from '../ai/runtimeTypes';
 import { detectCapabilities } from '../ai/capabilityDetect';
 import {
@@ -9,8 +9,6 @@ import {
   getModelManagerState,
   subscribeModelManager,
 } from '../ai/modelManager';
-import { STEP_TARGET } from '../ai/modelProfiles';
-import { getSelectedRuntimeId } from '../ai/browserLocalAdapter';
 
 interface ModelState {
   status: ModelStatus;
@@ -20,27 +18,31 @@ interface ModelState {
   loadTimeMs: number | null;
   error: string | null;
   runtimeConnected: boolean;
-  selectedRuntime: RuntimeId;
   diagnostics: ConnectionDiagnostics;
+  fallbackTriggered: boolean;
+  fallbackReason: string | null;
+  selectionReason: string | null;
   capabilities: DeviceCapabilities | null;
   capabilitiesLoading: boolean;
 
   detectCapabilities: () => Promise<void>;
-  loadModel: (ggufVariant?: string) => Promise<void>;
+  loadModel: () => Promise<void>;
   unloadModel: () => Promise<void>;
   initSubscription: () => () => void;
 }
 
 export const useModelStore = create<ModelState>((set) => ({
   status: 'not-loaded',
-  modelName: STEP_TARGET.modelName,
-  quantization: STEP_TARGET.quantization,
-  contextWindow: STEP_TARGET.contextWindow,
+  modelName: 'AJAWAI',
+  quantization: '',
+  contextWindow: 512,
   loadTimeMs: null,
   error: null,
   runtimeConnected: false,
-  selectedRuntime: getSelectedRuntimeId(),
-  diagnostics: emptyDiagnostics(getSelectedRuntimeId()),
+  diagnostics: emptyDiagnostics('wllama'),
+  fallbackTriggered: false,
+  fallbackReason: null,
+  selectionReason: null,
   capabilities: null,
   capabilitiesLoading: false,
 
@@ -50,27 +52,24 @@ export const useModelStore = create<ModelState>((set) => ({
     set({ capabilities, capabilitiesLoading: false });
   },
 
-  loadModel: async (ggufVariant?: string) => {
-    await loadModelManager(ggufVariant);
-  },
-
-  unloadModel: async () => {
-    await unloadModelManager();
-  },
+  loadModel: async () => { await loadModelManager(); },
+  unloadModel: async () => { await unloadModelManager(); },
 
   initSubscription: () => {
     const sync = () => {
       const s = getModelManagerState();
       set({
         status: s.status,
-        modelName: s.activeTarget?.modelName ?? STEP_TARGET.modelName,
-        quantization: s.activeTarget?.quantization ?? STEP_TARGET.quantization,
-        contextWindow: s.activeTarget?.contextWindow ?? STEP_TARGET.contextWindow,
+        modelName: s.activeProfile?.displayName ?? 'AJAWAI',
+        quantization: s.activeProfile?.quantization ?? '',
+        contextWindow: s.activeProfile?.contextWindow ?? 512,
         loadTimeMs: s.loadTimeMs,
         error: s.error,
         runtimeConnected: s.runtimeConnected,
-        selectedRuntime: s.selectedRuntime,
         diagnostics: s.diagnostics,
+        fallbackTriggered: s.fallbackTriggered,
+        fallbackReason: s.fallbackReason,
+        selectionReason: s.selectionReason,
       });
     };
     sync();

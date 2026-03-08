@@ -1,7 +1,7 @@
 import type { Message, PipelineMetrics } from '../lib/types';
 import { retrieveRelevantMemory, storeMemory } from './memory';
 import { buildPrompt } from './promptBuilder';
-import { runStepInference, MOBILE_GENERATION_CONFIG } from './browserLocalAdapter';
+import { runInference, MOBILE_GENERATION_CONFIG } from './browserLocalAdapter';
 import { analyzeIntent } from './picoClaw';
 import { routeToolCall } from './toolRouter';
 
@@ -15,7 +15,6 @@ export async function runPipeline(
   messages: Message[],
 ): Promise<PipelineResult> {
   const totalStart = performance.now();
-
   const lastMessage = messages[messages.length - 1];
 
   const intent = analyzeIntent(lastMessage.content);
@@ -25,13 +24,9 @@ export async function runPipeline(
       return {
         response: toolResult,
         metrics: {
-          promptTokens: 0,
-          generationLatencyMs: 0,
-          memoryRetrievalMs: 0,
-          totalLatencyMs: performance.now() - totalStart,
-          generationSource: 'unavailable',
-          memoryItemsInjected: 0,
-          recentTurnsIncluded: 0,
+          promptTokens: 0, generationLatencyMs: 0, memoryRetrievalMs: 0,
+          totalLatencyMs: performance.now() - totalStart, generationSource: 'unavailable',
+          memoryItemsInjected: 0, recentTurnsIncluded: 0,
           budgetUsage: { system: 0, memory: 0, history: 0, currentMessage: 0, total: 0 },
           secondPassUsed: false,
         },
@@ -44,8 +39,7 @@ export async function runPipeline(
   const memoryRetrievalMs = performance.now() - memStart;
 
   const prompt = buildPrompt(messages, memoryEntries);
-
-  const result = await runStepInference(prompt.text, MOBILE_GENERATION_CONFIG);
+  const result = await runInference(prompt.text, MOBILE_GENERATION_CONFIG);
 
   await storeMemory(conversationId, messages);
 
@@ -56,7 +50,7 @@ export async function runPipeline(
       generationLatencyMs: result.latencyMs,
       memoryRetrievalMs,
       totalLatencyMs: performance.now() - totalStart,
-      generationSource: result.source,
+      generationSource: result.source === 'model' ? 'step' : 'unavailable',
       memoryItemsInjected: prompt.memoryItemsIncluded,
       recentTurnsIncluded: prompt.turnsIncluded,
       budgetUsage: prompt.budget,
