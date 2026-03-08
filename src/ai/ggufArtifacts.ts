@@ -8,51 +8,49 @@ export interface GgufArtifactConfig {
   contextWindow: number;
   fileSizeBytes: number;
   estimatedRuntimeGB: number;
+  maxOutputTokens: number;
   fileMode: GgufFileMode;
   urls: string[];
   mmprojUrl: string | null;
 }
 
 export const STEP_GGUF_ARTIFACTS: Record<string, GgufArtifactConfig> = {
+  'iq3_xs': {
+    label: 'STEP-3-VL-10B IQ3_XS (mobile)',
+    quantization: 'IQ3_XS',
+    contextWindow: 512,
+    fileSizeBytes: 3_626_874_688,
+    estimatedRuntimeGB: 4.5,
+    maxOutputTokens: 128,
+    fileMode: 'single',
+    urls: [`${HF_BASE}/Step3-VL-10B-IQ3_XS.gguf`],
+    mmprojUrl: null,
+  },
+  'q3_k_m': {
+    label: 'STEP-3-VL-10B Q3_K_M',
+    quantization: 'Q3_K_M',
+    contextWindow: 512,
+    fileSizeBytes: 4_124_161_856,
+    estimatedRuntimeGB: 5.5,
+    maxOutputTokens: 128,
+    fileMode: 'single',
+    urls: [`${HF_BASE}/Step3-VL-10B-Q3_K_M.gguf`],
+    mmprojUrl: null,
+  },
   'q4_k_m': {
     label: 'STEP-3-VL-10B Q4_K_M',
     quantization: 'Q4_K_M',
     contextWindow: 1024,
     fileSizeBytes: 5_027_784_512,
     estimatedRuntimeGB: 6.5,
+    maxOutputTokens: 256,
     fileMode: 'single',
-    urls: [
-      `${HF_BASE}/Step3-VL-10B-Q4_K_M.gguf`,
-    ],
-    mmprojUrl: `${HF_BASE}/mmproj-Step3-VL-10b-F16.gguf`,
-  },
-  'q3_k_m': {
-    label: 'STEP-3-VL-10B Q3_K_M',
-    quantization: 'Q3_K_M',
-    contextWindow: 1024,
-    fileSizeBytes: 4_124_161_856,
-    estimatedRuntimeGB: 5.5,
-    fileMode: 'single',
-    urls: [
-      `${HF_BASE}/Step3-VL-10B-Q3_K_M.gguf`,
-    ],
-    mmprojUrl: `${HF_BASE}/mmproj-Step3-VL-10b-F16.gguf`,
-  },
-  'iq4_xs': {
-    label: 'STEP-3-VL-10B IQ4_XS',
-    quantization: 'IQ4_XS',
-    contextWindow: 1024,
-    fileSizeBytes: 4_593_297_216,
-    estimatedRuntimeGB: 6.0,
-    fileMode: 'single',
-    urls: [
-      `${HF_BASE}/Step3-VL-10B-IQ4_XS.gguf`,
-    ],
+    urls: [`${HF_BASE}/Step3-VL-10B-Q4_K_M.gguf`],
     mmprojUrl: `${HF_BASE}/mmproj-Step3-VL-10b-F16.gguf`,
   },
 };
 
-export const DEFAULT_GGUF_VARIANT = 'q3_k_m';
+export const DEFAULT_GGUF_VARIANT = 'iq3_xs';
 
 export interface ArtifactCheckResult {
   url: string;

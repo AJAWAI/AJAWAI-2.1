@@ -150,6 +150,7 @@ export class WllamaRuntime implements RuntimeBackend {
   }
 
   async initialize(target: DeploymentTarget): Promise<void> {
+    void target;
     this.initStart = performance.now();
     this.diag = { ...emptyWllamaDiag(), ggufVariant: this.diag.ggufVariant };
 
@@ -264,7 +265,7 @@ export class WllamaRuntime implements RuntimeBackend {
         : this.ggufConfig.urls;
 
       await this.instance.loadModelFromUrl(urls, {
-        n_ctx: target.contextWindow,
+        n_ctx: this.ggufConfig.contextWindow,
         n_threads: Math.min(navigator.hardwareConcurrency ?? 2, 4),
         cache_type_k: 'q4_0',
         cache_type_v: 'q4_0',

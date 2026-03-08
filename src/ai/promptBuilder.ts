@@ -7,8 +7,8 @@ const CONTEXT_WINDOW = STEP_TARGET.contextWindow;
 const OUTPUT_RESERVE = STEP_TARGET.maxOutputTokens;
 const PROMPT_BUDGET = CONTEXT_WINDOW - OUTPUT_RESERVE;
 
-const BUDGET_MEMORY_MAX = 120;
-const BUDGET_CURRENT_MSG = 150;
+const BUDGET_MEMORY_MAX = 80;
+const BUDGET_CURRENT_MSG = 100;
 
 function estimateTokens(text: string): number {
   return Math.ceil(text.length / 3.5);
