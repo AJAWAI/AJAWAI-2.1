@@ -52,8 +52,7 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: {
-          'webllm': ['@mlc-ai/web-llm'],
-          'wllama': ['@wllama/wllama/esm'],
+          'transformers': ['@huggingface/transformers'],
         },
       },
     },

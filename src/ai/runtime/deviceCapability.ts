@@ -8,9 +8,9 @@ export interface DeviceProfile {
   browser: string;
 }
 
-export type DeviceTier = 'high' | 'medium' | 'low';
+export type DeviceTier = 'high' | 'mid' | 'low';
 
-export async function detectDeviceProfile(): Promise<DeviceProfile> {
+export async function detectDevice(): Promise<DeviceProfile> {
   const nav = globalThis.navigator as Navigator & {
     gpu?: { requestAdapter(): Promise<unknown | null> };
     deviceMemory?: number;
@@ -18,13 +18,9 @@ export async function detectDeviceProfile(): Promise<DeviceProfile> {
 
   let hasWebGPU = false;
   if (nav.gpu) {
-    try {
-      const adapter = await nav.gpu.requestAdapter();
-      hasWebGPU = !!adapter;
-    } catch { /* unavailable */ }
+    try { hasWebGPU = !!(await nav.gpu.requestAdapter()); } catch { /* */ }
   }
 
-  const hasWASM = typeof WebAssembly === 'object' && typeof WebAssembly.instantiate === 'function';
   const ua = nav.userAgent ?? '';
   const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(ua);
   const isSafari = /Safari/i.test(ua) && !/Chrome|Chromium/i.test(ua);
@@ -39,24 +35,20 @@ export async function detectDeviceProfile(): Promise<DeviceProfile> {
     memoryGB: nav.deviceMemory ?? null,
     cores: nav.hardwareConcurrency ?? 2,
     hasWebGPU,
-    hasWASM,
+    hasWASM: typeof WebAssembly === 'object',
     isMobile,
     isSafari,
     browser,
   };
 }
 
-export function classifyTier(profile: DeviceProfile): DeviceTier {
-  const mem = profile.memoryGB;
-
-  if (profile.isSafari && profile.isMobile) return 'low';
-
+export function classifyTier(d: DeviceProfile): DeviceTier {
+  const mem = d.memoryGB;
   if (mem !== null) {
     if (mem >= 12) return 'high';
-    if (mem >= 8) return 'medium';
+    if (mem >= 6) return 'mid';
     return 'low';
   }
-
-  if (!profile.isMobile && profile.cores >= 8) return 'medium';
+  if (!d.isMobile && d.cores >= 8) return 'mid';
   return 'low';
 }

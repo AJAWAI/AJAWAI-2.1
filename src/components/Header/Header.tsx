@@ -7,37 +7,29 @@ export function Header() {
   const toggleSidebar = useSettingsStore((s) => s.toggleSidebar);
   const toggleSettingsPanel = useSettingsStore((s) => s.toggleSettingsPanel);
   const toggleDebugPanel = useSettingsStore((s) => s.toggleDebugPanel);
-  const modelStatus = useModelStore((s) => s.status);
-  const diagnostics = useModelStore((s) => s.diagnostics);
-  const modelName = useModelStore((s) => s.modelName);
+  const orch = useModelStore((s) => s.orch);
 
-  let badgeText: string;
-  if (modelStatus === 'ready') badgeText = 'Ready';
-  else if (modelStatus === 'loading') {
-    const pct = diagnostics.downloadProgress;
-    badgeText = pct > 0 && pct < 1 ? `${(pct * 100).toFixed(0)}%` : (diagnostics.subStatus?.slice(0, 20) ?? 'Loading…');
+  let badge: string;
+  if (orch.status === 'ready') badge = orch.activeModel?.displayName ?? 'Ready';
+  else if (orch.status === 'loading' || orch.status === 'switching') {
+    const p = orch.loader.progress;
+    badge = p > 0 && p < 1 ? `${(p * 100).toFixed(0)}%` : 'Loading…';
   }
-  else if (modelStatus === 'error') badgeText = 'Error';
-  else badgeText = 'Not Loaded';
+  else if (orch.status === 'error') badge = 'Error';
+  else badge = 'Not Connected';
+
+  const dataStatus = orch.status === 'ready' ? 'ready' : orch.status === 'loading' || orch.status === 'switching' ? 'loading' : orch.status === 'error' ? 'error' : 'not-loaded';
 
   return (
     <header className={styles.header}>
-      <button className={styles.iconBtn} onClick={toggleSidebar} aria-label="Toggle sidebar">
-        <Menu size={20} />
-      </button>
+      <button className={styles.iconBtn} onClick={toggleSidebar} aria-label="Menu"><Menu size={20} /></button>
       <div className={styles.center}>
         <span className={styles.title}>AJAWAI</span>
-        <span className={styles.badge} data-status={modelStatus}>
-          {modelStatus === 'ready' ? modelName : badgeText}
-        </span>
+        <span className={styles.badge} data-status={dataStatus}>{badge}</span>
       </div>
       <div className={styles.actions}>
-        <button className={styles.iconBtn} onClick={toggleDebugPanel} aria-label="Debug panel">
-          <Bug size={18} />
-        </button>
-        <button className={styles.iconBtn} onClick={toggleSettingsPanel} aria-label="Settings">
-          <Settings size={18} />
-        </button>
+        <button className={styles.iconBtn} onClick={toggleDebugPanel} aria-label="Debug"><Bug size={18} /></button>
+        <button className={styles.iconBtn} onClick={toggleSettingsPanel} aria-label="Settings"><Settings size={18} /></button>
       </div>
     </header>
   );
