@@ -1,16 +1,13 @@
 import { X } from 'lucide-react';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useModelStore } from '../../store/modelStore';
-import { MODEL_PROFILES } from '../../ai/modelProfiles';
+import { ALL_MODELS } from '../../ai/runtime/modelRegistry';
 import styles from './SettingsPanel.module.css';
 
 export function SettingsPanel() {
   const open = useSettingsStore((s) => s.settingsPanelOpen);
   const toggle = useSettingsStore((s) => s.toggleSettingsPanel);
-  const modelName = useModelStore((s) => s.modelName);
-  const quantization = useModelStore((s) => s.quantization);
-  const contextWindow = useModelStore((s) => s.contextWindow);
-  const runtimeConnected = useModelStore((s) => s.runtimeConnected);
+  const orch = useModelStore((s) => s.orch);
 
   if (!open) return null;
 
@@ -25,11 +22,11 @@ export function SettingsPanel() {
         <div className={styles.section}>
           <label className={styles.label}>Active Model</label>
           <div className={styles.modelLocked}>
-            <span className={styles.modelName}>{modelName}</span>
+            <span className={styles.modelName}>{orch.activeModel?.displayName ?? 'Not connected'}</span>
             <span className={styles.modelMeta}>
-              {runtimeConnected
-                ? `${quantization} · ${contextWindow} ctx · Ready`
-                : 'Not connected — tap Connect in debug panel'}
+              {orch.status === 'ready'
+                ? `${orch.activeModel?.quantization} · ${orch.activeModel?.contextWindow} ctx · WebGPU`
+                : 'Open debug panel to connect'}
             </span>
           </div>
         </div>
@@ -37,20 +34,18 @@ export function SettingsPanel() {
         <div className={styles.section}>
           <label className={styles.label}>Available Models</label>
           <div className={styles.configGrid}>
-            {(['high', 'medium', 'low'] as const).map((t) => {
-              const p = MODEL_PROFILES[t];
-              return (
-                <><span key={`${t}n`}>{p.displayName}</span><span key={`${t}v`}>{p.quantization} · {(p.fileSizeBytes / 1e9).toFixed(1)} GB · {p.contextWindow} ctx</span></>
-              );
-            })}
+            {ALL_MODELS.map((m) => (
+              <><span key={`${m.modelId}n`}>{m.displayName}</span><span key={`${m.modelId}v`}>{m.role} · {m.quantization} · {m.estimatedRAM_GB} GB</span></>
+            ))}
           </div>
         </div>
 
         <div className={styles.section}>
           <label className={styles.label}>Architecture</label>
           <div className={styles.configGrid}>
-            <span>Runtime</span><span>Wllama (WASM)</span>
-            <span>Memory</span><span>Memory-first</span>
+            <span>Runtime</span><span>Transformers.js + WebGPU</span>
+            <span>Reasoning</span><span>Phi-3.5 Mini</span>
+            <span>Vision</span><span>{orch.visionDisabled ? 'Disabled' : 'Moondream2'}</span>
             <span>Generation</span><span>Single-pass</span>
             <span>Selection</span><span>Automatic by device</span>
           </div>

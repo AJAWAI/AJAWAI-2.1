@@ -46,15 +46,11 @@ export async function runPipeline(
   return {
     response: result.text,
     metrics: {
-      promptTokens: prompt.tokenEstimate,
-      generationLatencyMs: result.latencyMs,
-      memoryRetrievalMs,
-      totalLatencyMs: performance.now() - totalStart,
+      promptTokens: prompt.tokenEstimate, generationLatencyMs: result.latencyMs,
+      memoryRetrievalMs, totalLatencyMs: performance.now() - totalStart,
       generationSource: result.source === 'model' ? 'step' : 'unavailable',
-      memoryItemsInjected: prompt.memoryItemsIncluded,
-      recentTurnsIncluded: prompt.turnsIncluded,
-      budgetUsage: prompt.budget,
-      secondPassUsed: false,
+      memoryItemsInjected: prompt.memoryItemsIncluded, recentTurnsIncluded: prompt.turnsIncluded,
+      budgetUsage: prompt.budget, secondPassUsed: false,
     },
   };
 }

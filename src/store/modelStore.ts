@@ -1,27 +1,16 @@
 import { create } from 'zustand';
-import type { DeviceCapabilities, ModelStatus } from '../lib/types';
-import type { ConnectionDiagnostics } from '../ai/runtimeTypes';
-import { emptyDiagnostics } from '../ai/runtimeTypes';
+import type { DeviceCapabilities } from '../lib/types';
 import { detectCapabilities } from '../ai/capabilityDetect';
 import {
-  loadModel as loadModelManager,
-  unloadModel as unloadModelManager,
-  getModelManagerState,
-  subscribeModelManager,
-} from '../ai/modelManager';
+  connect,
+  disconnect,
+  getOrchestratorState,
+  subscribeOrchestrator,
+  type OrchestratorState,
+} from '../ai/runtime/modelOrchestrator';
 
 interface ModelState {
-  status: ModelStatus;
-  modelName: string;
-  quantization: string;
-  contextWindow: number;
-  loadTimeMs: number | null;
-  error: string | null;
-  runtimeConnected: boolean;
-  diagnostics: ConnectionDiagnostics;
-  fallbackTriggered: boolean;
-  fallbackReason: string | null;
-  selectionReason: string | null;
+  orch: OrchestratorState;
   capabilities: DeviceCapabilities | null;
   capabilitiesLoading: boolean;
 
@@ -32,17 +21,7 @@ interface ModelState {
 }
 
 export const useModelStore = create<ModelState>((set) => ({
-  status: 'not-loaded',
-  modelName: 'AJAWAI',
-  quantization: '',
-  contextWindow: 512,
-  loadTimeMs: null,
-  error: null,
-  runtimeConnected: false,
-  diagnostics: emptyDiagnostics('wllama'),
-  fallbackTriggered: false,
-  fallbackReason: null,
-  selectionReason: null,
+  orch: getOrchestratorState(),
   capabilities: null,
   capabilitiesLoading: false,
 
@@ -52,27 +31,12 @@ export const useModelStore = create<ModelState>((set) => ({
     set({ capabilities, capabilitiesLoading: false });
   },
 
-  loadModel: async () => { await loadModelManager(); },
-  unloadModel: async () => { await unloadModelManager(); },
+  loadModel: async () => { await connect(); },
+  unloadModel: async () => { await disconnect(); },
 
   initSubscription: () => {
-    const sync = () => {
-      const s = getModelManagerState();
-      set({
-        status: s.status,
-        modelName: s.activeProfile?.displayName ?? 'AJAWAI',
-        quantization: s.activeProfile?.quantization ?? '',
-        contextWindow: s.activeProfile?.contextWindow ?? 512,
-        loadTimeMs: s.loadTimeMs,
-        error: s.error,
-        runtimeConnected: s.runtimeConnected,
-        diagnostics: s.diagnostics,
-        fallbackTriggered: s.fallbackTriggered,
-        fallbackReason: s.fallbackReason,
-        selectionReason: s.selectionReason,
-      });
-    };
-    sync();
-    return subscribeModelManager(sync);
+    return subscribeOrchestrator((orch) => {
+      set({ orch });
+    });
   },
 }));
