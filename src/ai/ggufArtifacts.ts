@@ -18,10 +18,10 @@ export const STEP_GGUF_ARTIFACTS: Record<string, GgufArtifactConfig> = {
   'iq3_xs': {
     label: 'STEP-3-VL-10B IQ3_XS (mobile)',
     quantization: 'IQ3_XS',
-    contextWindow: 512,
+    contextWindow: 256,
     fileSizeBytes: 3_626_874_688,
-    estimatedRuntimeGB: 4.5,
-    maxOutputTokens: 128,
+    estimatedRuntimeGB: 4.0,
+    maxOutputTokens: 64,
     fileMode: 'single',
     urls: [`${HF_BASE}/Step3-VL-10B-IQ3_XS.gguf`],
     mmprojUrl: null,

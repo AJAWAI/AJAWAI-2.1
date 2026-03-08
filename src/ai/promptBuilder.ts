@@ -1,14 +1,14 @@
 import type { Message, MemoryEntry, PromptBudget } from '../lib/types';
 import { STEP_TARGET } from './modelProfiles';
 
-const SYSTEM_PROMPT = 'You are AJAWAI, a concise local AI assistant (STEP-3-VL-10B). Be direct.';
+const SYSTEM_PROMPT = 'You are AJAWAI, a concise AI assistant. Be brief and direct.';
 
 const CONTEXT_WINDOW = STEP_TARGET.contextWindow;
 const OUTPUT_RESERVE = STEP_TARGET.maxOutputTokens;
 const PROMPT_BUDGET = CONTEXT_WINDOW - OUTPUT_RESERVE;
 
-const BUDGET_MEMORY_MAX = 80;
-const BUDGET_CURRENT_MSG = 100;
+const BUDGET_MEMORY_MAX = 40;
+const BUDGET_CURRENT_MSG = 60;
 
 function estimateTokens(text: string): number {
   return Math.ceil(text.length / 3.5);
@@ -32,52 +32,53 @@ export function buildPrompt(
   const systemTokens = estimateTokens(SYSTEM_PROMPT);
 
   const currentMsg = messages[messages.length - 1];
-  const currentText = `User: ${currentMsg.content}`;
+  const maxChars = BUDGET_CURRENT_MSG * 3;
+  const trimmedContent = currentMsg.content.length > maxChars
+    ? currentMsg.content.slice(0, maxChars)
+    : currentMsg.content;
+  const currentText = `User: ${trimmedContent}`;
   const currentTokens = Math.min(estimateTokens(currentText), BUDGET_CURRENT_MSG);
-  const truncatedCurrent = currentTokens >= BUDGET_CURRENT_MSG
-    ? `User: ${currentMsg.content.slice(0, BUDGET_CURRENT_MSG * 3)}`
-    : currentText;
 
   let memoryTokens = 0;
   const injectedMemory: string[] = [];
   for (const entry of memoryEntries) {
-    const line = `[${entry.category}] ${entry.summary}`;
+    const line = `[${entry.category}] ${entry.summary.slice(0, 60)}`;
     const lineTokens = estimateTokens(line);
     if (memoryTokens + lineTokens > BUDGET_MEMORY_MAX) break;
     injectedMemory.push(line);
     memoryTokens += lineTokens;
   }
 
-  const usedSoFar = systemTokens + memoryTokens + currentTokens + 3;
-  const historyBudget = PROMPT_BUDGET - usedSoFar;
+  const usedSoFar = systemTokens + memoryTokens + currentTokens + 2;
+  const historyBudget = Math.max(0, PROMPT_BUDGET - usedSoFar);
 
   let historyTokens = 0;
   const historyTurns: string[] = [];
   const olderMessages = messages.slice(0, -1).reverse();
 
   for (const msg of olderMessages) {
-    const prefix = msg.role === 'user' ? 'User' : 'Assistant';
-    const line = `${prefix}: ${msg.content}`;
+    const prefix = msg.role === 'user' ? 'U' : 'A';
+    const content = msg.content.slice(0, 80);
+    const line = `${prefix}: ${content}`;
     const lineTokens = estimateTokens(line);
-
     if (historyTokens + lineTokens > historyBudget) break;
     historyTurns.unshift(line);
     historyTokens += lineTokens;
   }
 
   if (injectedMemory.length > 0) {
-    parts.push(`[Memory]\n${injectedMemory.join('\n')}`);
+    parts.push(injectedMemory.join('\n'));
   }
 
   if (historyTurns.length > 0) {
     parts.push(historyTurns.join('\n'));
   }
 
-  parts.push(truncatedCurrent);
-  parts.push('Assistant:');
+  parts.push(currentText);
+  parts.push('A:');
 
-  const text = parts.join('\n\n');
-  const totalTokens = systemTokens + memoryTokens + historyTokens + currentTokens + 3;
+  const text = parts.join('\n');
+  const totalTokens = systemTokens + memoryTokens + historyTokens + currentTokens + 2;
 
   return {
     text,

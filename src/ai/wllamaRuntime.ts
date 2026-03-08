@@ -266,7 +266,7 @@ export class WllamaRuntime implements RuntimeBackend {
 
       await this.instance.loadModelFromUrl(urls, {
         n_ctx: this.ggufConfig.contextWindow,
-        n_threads: Math.min(navigator.hardwareConcurrency ?? 2, 4),
+        n_threads: Math.min(navigator.hardwareConcurrency ?? 2, 2),
         cache_type_k: 'q4_0',
         cache_type_v: 'q4_0',
         progressCallback: (p) => {
@@ -298,6 +298,8 @@ export class WllamaRuntime implements RuntimeBackend {
       if (msg.includes('quota') || msg.includes('QuotaExceededError') || msg.includes('storage quota')) {
         const refreshedQuota = await checkStorageQuota();
         hint = ` Storage quota exceeded. Available: ${refreshedQuota.availableGB?.toFixed(1) ?? '?'} GB, needed: ~${requiredGB.toFixed(1)} GB. Clear site data in browser settings and retry.`;
+      } else if (msg.includes('magic') || msg.includes('abort signal') || msg.includes('abort')) {
+        hint = ` This is a runtime memory/load failure — NOT a missing artifact. The ${requiredGB.toFixed(1)} GB model passed download but the browser ran out of memory during WASM model initialization (GGUF parsing, weight loading, or context allocation). Try closing other tabs, clearing browser cache, or restarting the browser.`;
       } else if (msg.includes('RangeError') || msg.includes('out of memory') || msg.includes('OOM')) {
         hint = ` Browser memory limit hit. The ${requiredGB.toFixed(1)} GB model may need to be split into ≤512 MB shards.`;
       }
