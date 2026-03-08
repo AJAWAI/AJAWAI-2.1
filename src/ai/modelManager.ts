@@ -1,127 +1,135 @@
 import type { ModelStatus } from '../lib/types';
-import { STEP_TARGET, type DeploymentTarget } from './modelProfiles';
-import type { ConnectionDiagnostics, RuntimeId } from './runtimeTypes';
+import type { ConnectionDiagnostics } from './runtimeTypes';
 import { emptyDiagnostics } from './runtimeTypes';
-import {
-  createRuntime,
-  getActiveRuntime,
-  setActiveRuntime,
-  getSelectedRuntimeId,
-} from './browserLocalAdapter';
+import { type ModelProfile, getFallbackTier, getProfileForTier } from './modelProfiles';
+import { selectModel } from './modelSelector';
+import type { DeviceTier } from './deviceCapability';
+import { WllamaRuntime } from './wllamaRuntime';
+
+let activeRuntime: WllamaRuntime | null = null;
 
 export interface ModelManagerState {
   status: ModelStatus;
-  activeTarget: DeploymentTarget | null;
+  activeProfile: ModelProfile | null;
   loadTimeMs: number | null;
   error: string | null;
   runtimeConnected: boolean;
   diagnostics: ConnectionDiagnostics;
-  selectedRuntime: RuntimeId;
+  fallbackTriggered: boolean;
+  fallbackReason: string | null;
+  selectionReason: string | null;
 }
 
 let state: ModelManagerState = {
   status: 'not-loaded',
-  activeTarget: null,
+  activeProfile: null,
   loadTimeMs: null,
   error: null,
   runtimeConnected: false,
-  diagnostics: emptyDiagnostics(getSelectedRuntimeId()),
-  selectedRuntime: getSelectedRuntimeId(),
+  diagnostics: emptyDiagnostics('wllama'),
+  fallbackTriggered: false,
+  fallbackReason: null,
+  selectionReason: null,
 };
 
 type Listener = (s: ModelManagerState) => void;
 const listeners = new Set<Listener>();
+function notify() { listeners.forEach((fn) => fn(state)); }
 
-function notify() {
-  listeners.forEach((fn) => fn(state));
-}
+export function getModelManagerState() { return state; }
+export function subscribeModelManager(fn: Listener) { listeners.add(fn); return () => listeners.delete(fn); }
 
-export function getModelManagerState(): ModelManagerState {
-  return state;
-}
-
-export function subscribeModelManager(fn: Listener): () => void {
-  listeners.add(fn);
-  return () => listeners.delete(fn);
-}
-
-export async function loadModel(ggufVariant?: string): Promise<void> {
-  const runtimeId = getSelectedRuntimeId();
-  state = {
-    ...state,
-    status: 'loading',
-    error: null,
-    activeTarget: STEP_TARGET,
-    selectedRuntime: runtimeId,
-    diagnostics: emptyDiagnostics(runtimeId),
-  };
-  notify();
-
-  const runtime = createRuntime(runtimeId, ggufVariant);
+async function tryLoadProfile(profile: ModelProfile): Promise<{ ok: boolean; error?: string }> {
+  const runtime = new WllamaRuntime();
   const start = performance.now();
 
-  const pollInterval = setInterval(() => {
-    const diag = runtime.getDiagnostics();
-    if (diag.stage !== state.diagnostics.stage ||
-        diag.subStatus !== state.diagnostics.subStatus ||
-        Math.abs(diag.downloadProgress - state.diagnostics.downloadProgress) > 0.005) {
-      state = { ...state, diagnostics: diag };
+  const poll = setInterval(() => {
+    const d = runtime.getDiagnostics();
+    if (d.stage !== state.diagnostics.stage || d.subStatus !== state.diagnostics.subStatus ||
+        Math.abs(d.downloadProgress - state.diagnostics.downloadProgress) > 0.005) {
+      state = { ...state, diagnostics: { ...d, activeProfile: profile } };
       notify();
     }
   }, 250);
 
   try {
-    await runtime.initialize(STEP_TARGET);
-
-    clearInterval(pollInterval);
-    setActiveRuntime(runtime);
-    const loadTimeMs = performance.now() - start;
-
+    await runtime.initialize(profile);
+    clearInterval(poll);
+    activeRuntime = runtime;
     state = {
       status: 'ready',
-      activeTarget: STEP_TARGET,
-      loadTimeMs,
+      activeProfile: profile,
+      loadTimeMs: performance.now() - start,
       error: null,
       runtimeConnected: true,
       diagnostics: runtime.getDiagnostics(),
-      selectedRuntime: runtimeId,
+      fallbackTriggered: state.fallbackTriggered,
+      fallbackReason: state.fallbackReason,
+      selectionReason: state.selectionReason,
     };
+    notify();
+    return { ok: true };
   } catch (e) {
-    clearInterval(pollInterval);
-    setActiveRuntime(null);
-    const diag = runtime.getDiagnostics();
-    const errorMsg = e instanceof Error ? e.message : `Failed to load ${STEP_TARGET.modelName}`;
+    clearInterval(poll);
+    try { await runtime.unload(); } catch { /* */ }
+    const msg = e instanceof Error ? e.message : String(e);
+    state = { ...state, diagnostics: runtime.getDiagnostics() };
+    notify();
+    return { ok: false, error: msg };
+  }
+}
+
+export async function loadModel(): Promise<void> {
+  state = {
+    ...state, status: 'loading', error: null,
+    fallbackTriggered: false, fallbackReason: null,
+    diagnostics: { ...emptyDiagnostics('wllama'), stage: 'selecting-model', subStatus: 'Detecting device…' },
+  };
+  notify();
+
+  const selection = await selectModel();
+  state.selectionReason = selection.reason;
+  let currentTier: DeviceTier | null = selection.tier;
+  let attempt = 0;
+
+  while (currentTier) {
+    const profile = selection.tier === currentTier ? selection.profile
+      : getProfileForTier(currentTier);
+
+    if (attempt > 0) {
+      state.fallbackTriggered = true;
+      state.fallbackReason = `${state.error} → falling back to ${profile.displayName}`;
+    }
 
     state = {
-      status: 'error',
-      activeTarget: STEP_TARGET,
-      loadTimeMs: null,
-      error: errorMsg,
-      runtimeConnected: false,
-      diagnostics: diag,
-      selectedRuntime: runtimeId,
+      ...state, status: 'loading', error: null, activeProfile: profile,
+      diagnostics: { ...emptyDiagnostics('wllama'), activeProfile: profile, subStatus: `Trying ${profile.displayName}…` },
     };
+    notify();
+
+    const result = await tryLoadProfile(profile);
+    if (result.ok) return;
+
+    state.error = result.error ?? 'Unknown error';
+    currentTier = getFallbackTier(currentTier);
+    attempt++;
   }
 
+  state = { ...state, status: 'error', runtimeConnected: false };
   notify();
 }
 
 export async function unloadModel(): Promise<void> {
-  const runtime = getActiveRuntime();
-  if (runtime) {
-    try { await runtime.unload(); } catch { /* best effort */ }
-    setActiveRuntime(null);
+  if (activeRuntime) {
+    try { await activeRuntime.unload(); } catch { /* */ }
+    activeRuntime = null;
   }
-
-  const runtimeId = getSelectedRuntimeId();
   state = {
-    status: 'not-loaded',
-    activeTarget: null,
-    loadTimeMs: null,
-    error: null,
-    runtimeConnected: false,
-    diagnostics: emptyDiagnostics(runtimeId),
-    selectedRuntime: runtimeId,
+    status: 'not-loaded', activeProfile: null, loadTimeMs: null, error: null,
+    runtimeConnected: false, diagnostics: emptyDiagnostics('wllama'),
+    fallbackTriggered: false, fallbackReason: null, selectionReason: null,
   };
   notify();
 }
+
+export function getActiveRuntime(): WllamaRuntime | null { return activeRuntime; }

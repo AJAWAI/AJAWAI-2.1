@@ -1,9 +1,3 @@
-import { STEP_TARGET } from './modelProfiles';
-import type { RuntimeBackend, RuntimeId, ConnectionDiagnostics } from './runtimeTypes';
-import { emptyDiagnostics } from './runtimeTypes';
-import { WebLLMRuntime } from './webllmRuntime';
-import { WllamaRuntime } from './wllamaRuntime';
-
 export interface GenerationConfig {
   maxOutputTokens: number;
   temperature: number;
@@ -12,7 +6,7 @@ export interface GenerationConfig {
 }
 
 export const MOBILE_GENERATION_CONFIG: GenerationConfig = {
-  maxOutputTokens: STEP_TARGET.maxOutputTokens,
+  maxOutputTokens: 128,
   temperature: 0.7,
   topP: 0.9,
   repeatPenalty: 1.1,
@@ -21,66 +15,29 @@ export const MOBILE_GENERATION_CONFIG: GenerationConfig = {
 export interface InferenceResult {
   text: string;
   latencyMs: number;
-  source: 'step' | 'unavailable';
+  source: 'model' | 'unavailable';
 }
 
-let activeRuntime: RuntimeBackend | null = null;
-let selectedRuntimeId: RuntimeId = 'wllama';
+import { getActiveRuntime, getModelManagerState } from './modelManager';
 
-export function createRuntime(id?: RuntimeId, ggufVariant?: string): RuntimeBackend {
-  const runtimeId = id ?? selectedRuntimeId;
-  if (runtimeId === 'wllama') {
-    return new WllamaRuntime(ggufVariant);
-  }
-  return new WebLLMRuntime();
-}
-
-export function getSelectedRuntimeId(): RuntimeId {
-  return selectedRuntimeId;
-}
-
-export function setSelectedRuntimeId(id: RuntimeId): void {
-  selectedRuntimeId = id;
-}
-
-export function getActiveRuntime(): RuntimeBackend | null {
-  return activeRuntime;
-}
-
-export function setActiveRuntime(runtime: RuntimeBackend | null): void {
-  activeRuntime = runtime;
-}
-
-export function getRuntimeDiagnostics(): ConnectionDiagnostics {
-  return activeRuntime?.getDiagnostics() ?? emptyDiagnostics(selectedRuntimeId);
-}
-
-export async function runStepInference(
+export async function runInference(
   prompt: string,
   config: GenerationConfig = MOBILE_GENERATION_CONFIG,
 ): Promise<InferenceResult> {
   const start = performance.now();
+  const runtime = getActiveRuntime();
+  const mgrState = getModelManagerState();
 
-  if (!activeRuntime || activeRuntime.getDiagnostics().stage !== 'ready') {
-    const diag = getRuntimeDiagnostics();
-    const reason = diag.failureReason
-      ? `Connection failed at ${diag.failureStage}: ${diag.failureReason}`
-      : `STEP runtime not connected (${selectedRuntimeId}). Use the debug panel to attempt connection.`;
-
-    return {
-      text: reason,
-      latencyMs: performance.now() - start,
-      source: 'unavailable',
-    };
+  if (!runtime || mgrState.status !== 'ready') {
+    const reason = mgrState.error
+      ? `Connection failed: ${mgrState.error}`
+      : 'Model not loaded. Open debug panel to connect.';
+    return { text: reason, latencyMs: performance.now() - start, source: 'unavailable' };
   }
 
   try {
-    const text = await activeRuntime.generate(prompt, config.maxOutputTokens, config.temperature);
-    return {
-      text,
-      latencyMs: performance.now() - start,
-      source: 'step',
-    };
+    const text = await runtime.generate(prompt, config.maxOutputTokens, config.temperature);
+    return { text, latencyMs: performance.now() - start, source: 'model' };
   } catch (e) {
     return {
       text: `Generation error: ${e instanceof Error ? e.message : String(e)}`,
