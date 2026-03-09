@@ -56,7 +56,7 @@ export function subscribeOrchestrator(fn: Listener) {
   return () => { subs.delete(fn); unsub(); };
 }
 
-export async function connect(): Promise<void> {
+export async function connect(safeMode: boolean = false): Promise<void> {
   state = { ...state, status: 'detecting', error: null, fallbackTriggered: false, fallbackReason: null };
   notify();
 
@@ -74,7 +74,7 @@ export async function connect(): Promise<void> {
   notify();
 
   try {
-    await loadModel(PHI35_Q4);
+    await loadModel(PHI35_Q4, safeMode);
     state = { ...state, status: 'ready', activeModel: PHI35_Q4 };
     notify();
   } catch (e) {

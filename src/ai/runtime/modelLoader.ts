@@ -5,35 +5,46 @@ export type LoadStage =
   | 'importing'
   | 'downloading-tokenizer'
   | 'downloading-model'
-  | 'initializing'
+  | 'creating-session'
+  | 'pre-smoke-delay'
   | 'smoke-test'
   | 'ready'
   | 'failed';
 
 export interface LoaderState {
   stage: LoadStage;
+  lastSuccessfulStage: LoadStage;
   modelId: string | null;
   modelPackage: string | null;
   loaderKind: string | null;
   runtime: string | null;
   browserReady: boolean;
+  browserReadyGateResult: string;
   tokenizerProgress: number;
   modelProgress: number;
   combinedProgress: number;
   error: string | null;
   cacheHit: boolean;
+  cacheClearedThisRun: boolean;
   cacheVersion: number;
+  gpuSessionInitialized: boolean;
+  aboutToRunSmokeTest: boolean;
   smokeTestPassed: boolean;
+  safeLoadMode: boolean;
   elapsedMs: number;
+  stageLog: string[];
 }
 
 export function emptyLoaderState(): LoaderState {
   return {
-    stage: 'idle', modelId: null, modelPackage: null, loaderKind: null,
-    runtime: null, browserReady: false,
+    stage: 'idle', lastSuccessfulStage: 'idle',
+    modelId: null, modelPackage: null, loaderKind: null,
+    runtime: null, browserReady: false, browserReadyGateResult: '',
     tokenizerProgress: 0, modelProgress: 0, combinedProgress: 0,
-    error: null, cacheHit: false, cacheVersion: 0,
-    smokeTestPassed: false, elapsedMs: 0,
+    error: null, cacheHit: false, cacheClearedThisRun: false, cacheVersion: 0,
+    gpuSessionInitialized: false, aboutToRunSmokeTest: false,
+    smokeTestPassed: false, safeLoadMode: false, elapsedMs: 0,
+    stageLog: [],
   };
 }
 
@@ -71,22 +82,36 @@ function updateProgress() {
   loaderState.combinedProgress = loaderState.tokenizerProgress * 0.1 + loaderState.modelProgress * 0.9;
 }
 
+function log(msg: string) {
+  const ts = loadStart > 0 ? `[${((performance.now() - loadStart) / 1000).toFixed(1)}s]` : '[0s]';
+  loaderState.stageLog = [...loaderState.stageLog.slice(-19), `${ts} ${msg}`];
+}
+
+function setStage(stage: LoadStage, msg?: string) {
+  loaderState.lastSuccessfulStage = loaderState.stage === 'failed' ? loaderState.lastSuccessfulStage : loaderState.stage;
+  loaderState.stage = stage;
+  log(msg ?? stage);
+  notify();
+}
+
 function notify() {
   if (loadStart > 0) loaderState.elapsedMs = performance.now() - loadStart;
-  listeners.forEach((fn) => fn({ ...loaderState }));
+  listeners.forEach((fn) => fn({ ...loaderState, stageLog: [...loaderState.stageLog] }));
 }
 
 export function subscribeLoader(fn: Listener) { listeners.add(fn); return () => listeners.delete(fn); }
 export function getLoaderState(): LoaderState {
   if (loadStart > 0) loaderState.elapsedMs = performance.now() - loadStart;
-  return { ...loaderState };
+  return { ...loaderState, stageLog: [...loaderState.stageLog] };
 }
 export function getActiveModel(): TFModel | null { return activeModel; }
 export function getActiveTokenizer(): TFTokenizer | null { return activeTokenizer; }
 export function getActiveModelId(): string | null { return activeModelId; }
 
 export async function disposeActive(): Promise<void> {
-  if (activeModel?.dispose) { try { await activeModel.dispose(); } catch { /* */ } }
+  if (activeModel?.dispose) {
+    try { log('Disposing active model'); await activeModel.dispose(); log('Model disposed'); } catch { log('Dispose error (ignored)'); }
+  }
   activeModel = null;
   activeTokenizer = null;
   activeModelId = null;
@@ -115,10 +140,12 @@ function markCacheValid(entry: ModelEntry) {
 export async function clearModelCache(entry: ModelEntry): Promise<void> {
   invalidateCache(entry);
   try {
-    const caches = await globalThis.caches?.keys();
-    if (caches) {
-      for (const name of caches) {
-        if (name.includes('transformers')) await globalThis.caches.delete(name);
+    const keys = await globalThis.caches?.keys();
+    if (keys) {
+      for (const name of keys) {
+        if (name.includes('transformers') || name.includes('onnx')) {
+          await globalThis.caches.delete(name);
+        }
       }
     }
   } catch { /* */ }
@@ -126,77 +153,111 @@ export async function clearModelCache(entry: ModelEntry): Promise<void> {
 
 async function ensureTransformers(): Promise<TransformersModule> {
   if (tfjs) return tfjs;
+  log('Dynamic import @huggingface/transformers');
   const mod = await import('@huggingface/transformers');
   tfjs = mod as unknown as TransformersModule;
+  log('Transformers.js module loaded');
   return tfjs;
 }
 
-async function loadPhiTextWebGPU(entry: ModelEntry): Promise<void> {
-  const tf = await ensureTransformers();
+async function loadPhiTextWebGPU(entry: ModelEntry, safeMode: boolean): Promise<void> {
+  let tf: TransformersModule;
+  try {
+    tf = await ensureTransformers();
+  } catch (e) {
+    throw new Error(`Transformers.js import failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
 
-  loaderState = { ...loaderState, stage: 'downloading-tokenizer' };
-  notify();
+  setStage('downloading-tokenizer', `Loading tokenizer from ${entry.hfId}`);
+  let tokenizer: TFTokenizer;
+  try {
+    tokenizer = await tf.AutoTokenizer.from_pretrained(entry.hfId, {
+      progress_callback: (p: { progress?: number }) => {
+        if (typeof p.progress === 'number') {
+          peakTokProgress = Math.max(peakTokProgress, p.progress / 100);
+          loaderState.tokenizerProgress = peakTokProgress;
+          updateProgress();
+          notify();
+        }
+      },
+    });
+    log('Tokenizer loaded successfully');
+  } catch (e) {
+    throw new Error(`Tokenizer load failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
 
-  const tokenizer = await tf.AutoTokenizer.from_pretrained(entry.hfId, {
-    progress_callback: (p: { progress?: number }) => {
-      if (typeof p.progress === 'number') {
-        const v = Math.max(peakTokProgress, p.progress / 100);
-        peakTokProgress = v;
-        loaderState.tokenizerProgress = v;
-        updateProgress();
-        notify();
-      }
-    },
-  });
-
-  loaderState = { ...loaderState, stage: 'downloading-model', tokenizerProgress: 1 };
+  setStage('downloading-model', `Loading model ONNX (${entry.dtype}, ${entry.device})`);
+  loaderState.tokenizerProgress = 1;
   updateProgress();
   notify();
 
-  const model = await tf.AutoModelForCausalLM.from_pretrained(entry.hfId, {
-    dtype: entry.dtype,
-    device: entry.device,
-    progress_callback: (p: { progress?: number }) => {
-      if (typeof p.progress === 'number') {
-        const v = Math.max(peakModelProgress, p.progress / 100);
-        peakModelProgress = v;
-        loaderState.modelProgress = v;
-        updateProgress();
-        notify();
-      }
-    },
-  });
+  let model: TFModel;
+  try {
+    model = await tf.AutoModelForCausalLM.from_pretrained(entry.hfId, {
+      dtype: entry.dtype,
+      device: entry.device,
+      progress_callback: (p: { progress?: number }) => {
+        if (typeof p.progress === 'number') {
+          peakModelProgress = Math.max(peakModelProgress, p.progress / 100);
+          loaderState.modelProgress = peakModelProgress;
+          updateProgress();
+          notify();
+        }
+      },
+    });
+    log('Model ONNX files loaded');
+  } catch (e) {
+    throw new Error(`Model load failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
 
   activeTokenizer = tokenizer;
   activeModel = model;
   activeModelId = entry.modelId;
 
-  loaderState = { ...loaderState, stage: 'initializing', modelProgress: 1, combinedProgress: 1 };
+  setStage('creating-session', 'GPU session created, model in memory');
+  loaderState.modelProgress = 1;
+  loaderState.combinedProgress = 1;
+  loaderState.gpuSessionInitialized = true;
   notify();
 
-  await new Promise((r) => setTimeout(r, 500));
+  const delayMs = safeMode ? 1500 : 500;
+  setStage('pre-smoke-delay', `Waiting ${delayMs}ms before smoke test (safe=${safeMode})`);
+  await new Promise((r) => setTimeout(r, delayMs));
 
-  loaderState = { ...loaderState, stage: 'smoke-test' };
-  notify();
+  loaderState.aboutToRunSmokeTest = true;
+  setStage('smoke-test', 'Running smoke test: generate 1 token from "Hi"');
 
-  const testInput = activeTokenizer.encode('Hi', { add_special_tokens: true });
-  const output = await activeModel.generate({
-    input_ids: testInput.input_ids,
-    max_new_tokens: 2,
-    do_sample: false,
-  });
-  const decoded = activeTokenizer.decode(output, { skip_special_tokens: true });
-  if (!decoded || decoded.length === 0) throw new Error('Smoke test produced empty output');
-
-  loaderState.smokeTestPassed = true;
+  try {
+    const testInput = activeTokenizer.encode('Hi', { add_special_tokens: true });
+    log('Smoke test: encoded input, calling generate(max_new_tokens=1)');
+    const output = await activeModel.generate({
+      input_ids: testInput.input_ids,
+      max_new_tokens: 1,
+      do_sample: false,
+    });
+    const decoded = activeTokenizer.decode(output, { skip_special_tokens: true });
+    log(`Smoke test output: "${decoded.slice(0, 40)}"`);
+    if (!decoded || decoded.length === 0) throw new Error('Smoke test produced empty output');
+    loaderState.smokeTestPassed = true;
+    log('Smoke test PASSED');
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    log(`Smoke test FAILED: ${msg}`);
+    throw new Error(`Smoke test failed: ${msg}`);
+  }
 }
 
-export async function loadModel(entry: ModelEntry): Promise<void> {
+export async function loadModel(entry: ModelEntry, safeMode: boolean = false): Promise<void> {
   if (!entry.browserReady) {
-    throw new Error(`${entry.displayName} is not browser-ready (${entry.loaderKind}). Reserved for future runtime.`);
+    const reason = `${entry.displayName} (${entry.loaderKind}) — not browser-ready. Reserved for future runtime.`;
+    loaderState.browserReadyGateResult = `BLOCKED: ${reason}`;
+    throw new Error(reason);
   }
 
-  if (activeModelId === entry.modelId && activeModel && activeTokenizer) return;
+  if (activeModelId === entry.modelId && activeModel && activeTokenizer) {
+    log('Model already loaded, skipping');
+    return;
+  }
 
   await disposeActive();
 
@@ -204,26 +265,33 @@ export async function loadModel(entry: ModelEntry): Promise<void> {
   peakTokProgress = 0;
   peakModelProgress = 0;
   const cacheHit = isCacheValid(entry);
+  let cacheClearedThisRun = false;
 
-  if (!cacheHit) invalidateCache(entry);
+  if (!cacheHit) {
+    invalidateCache(entry);
+    cacheClearedThisRun = true;
+  }
 
   loaderState = {
+    ...emptyLoaderState(),
     stage: 'importing', modelId: entry.modelId, modelPackage: entry.hfId,
     loaderKind: entry.loaderKind, runtime: entry.device, browserReady: entry.browserReady,
-    tokenizerProgress: 0, modelProgress: 0, combinedProgress: 0,
-    error: null, cacheHit, cacheVersion: entry.cacheVersion,
-    smokeTestPassed: false, elapsedMs: 0,
+    browserReadyGateResult: `PASSED: ${entry.loaderKind}`,
+    cacheHit, cacheClearedThisRun, cacheVersion: entry.cacheVersion,
+    safeLoadMode: safeMode,
+    stageLog: [`[0s] Starting ${entry.displayName} (${entry.loaderKind}, safe=${safeMode})`],
   };
   notify();
 
   try {
     if (entry.loaderKind === 'phi-text-webgpu') {
-      await loadPhiTextWebGPU(entry);
+      await loadPhiTextWebGPU(entry, safeMode);
     } else {
-      throw new Error(`Loader '${entry.loaderKind}' not implemented for browser. Model kept in registry for future use.`);
+      throw new Error(`Loader '${entry.loaderKind}' not implemented. Model in registry for future use.`);
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
+    log(`FATAL: ${msg}`);
     if (activeModel?.dispose) { try { await activeModel.dispose(); } catch { /* */ } }
     activeModel = null;
     activeTokenizer = null;
@@ -233,10 +301,7 @@ export async function loadModel(entry: ModelEntry): Promise<void> {
     throw new Error(msg);
   }
 
-  loaderState = {
-    ...loaderState, stage: 'ready',
-    elapsedMs: performance.now() - loadStart,
-  };
+  setStage('ready', `${entry.displayName} ready`);
   markCacheValid(entry);
   notify();
 }
