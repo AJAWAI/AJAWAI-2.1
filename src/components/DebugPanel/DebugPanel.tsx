@@ -1,4 +1,4 @@
-import { Activity, Cpu, HardDrive, Loader, Brain, AlertTriangle } from 'lucide-react';
+import { Activity, Cpu, HardDrive, Loader, Brain, AlertTriangle, Shield } from 'lucide-react';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useModelStore } from '../../store/modelStore';
 import { useChatStore } from '../../store/chatStore';
@@ -8,6 +8,8 @@ import styles from './DebugPanel.module.css';
 
 export function DebugPanel() {
   const show = useSettingsStore((s) => s.showDebugPanel);
+  const safeLoadMode = useSettingsStore((s) => s.safeLoadMode);
+  const toggleSafe = useSettingsStore((s) => s.toggleSafeLoadMode);
   const { orch, capabilities, capabilitiesLoading } = useModelStore();
   const loadModel = useModelStore((s) => s.loadModel);
   const unloadModel = useModelStore((s) => s.unloadModel);
@@ -37,42 +39,49 @@ export function DebugPanel() {
       </div>
 
       <div className={styles.section}>
+        <h4 className={styles.sectionTitle}><Shield size={12} /> Safe Load Mode</h4>
+        <label className={styles.toggle}>
+          <input type="checkbox" checked={safeLoadMode} onChange={toggleSafe} disabled={isLoading} />
+          <span>{safeLoadMode ? 'ON — Phi only, extra delay, tiny smoke test' : 'OFF — normal loading'}</span>
+        </label>
+      </div>
+
+      <div className={styles.section}>
         <h4 className={styles.sectionTitle}><HardDrive size={12} /> Models</h4>
         {ALL_MODELS.map((m) => (
           <div key={m.modelId} className={styles.artifactRow}>
             <span className={o.activeModel?.modelId === m.modelId ? styles.good : styles.muted}>
-              {o.activeModel?.modelId === m.modelId ? '▶ ' : '  '}
-              {m.displayName}
-            </span>
-            {' '}
+              {o.activeModel?.modelId === m.modelId ? '▶ ' : '  '}{m.displayName}
+            </span>{' '}
             <span className={styles.muted}>
-              {m.quantization} · {m.estimatedRAM_GB}GB · {m.role}
+              {m.quantization} · {m.estimatedRAM_GB}GB
               {m.browserReady
-                ? <span className={styles.good}> · browser-ready</span>
-                : <span className={styles.errorText}> · browser-unavailable</span>
-              }
+                ? <span className={styles.good}> · ready</span>
+                : <span className={styles.errorText}> · unavailable</span>}
             </span>
           </div>
         ))}
       </div>
 
       <div className={styles.section}>
-        <h4 className={styles.sectionTitle}><HardDrive size={12} /> Status</h4>
+        <h4 className={styles.sectionTitle}><HardDrive size={12} /> Loader State</h4>
         <div className={styles.grid}>
-          <span>Active</span>
-          <span className={o.status === 'ready' ? styles.good : undefined}>
-            {o.activeModel?.displayName ?? 'None'}
-          </span>
           <span>Stage</span>
           <span data-status={o.status} className={styles.statusBadge}>
             {isLoading && <Loader size={10} className={styles.spin} />}
             {l.stage !== 'idle' ? l.stage : o.status}
           </span>
+          <span>Last OK</span><span>{l.lastSuccessfulStage}</span>
           {l.loaderKind && <><span>Loader</span><span>{l.loaderKind}</span></>}
           {l.runtime && <><span>Runtime</span><span>{l.runtime}</span></>}
           {l.modelPackage && <><span>Package</span><span className={styles.muted}>{l.modelPackage}</span></>}
-          <span>Cache v{l.cacheVersion}</span><span>{l.cacheHit ? 'Hit' : 'Miss (fresh)'}</span>
-          <span>Smoke test</span><span className={l.smokeTestPassed ? styles.good : styles.muted}>{l.smokeTestPassed ? '✓ Passed' : '—'}</span>
+          <span>Browser gate</span><span className={l.browserReady ? styles.good : styles.errorText}>{l.browserReadyGateResult || '—'}</span>
+          <span>Cache v{l.cacheVersion}</span><span>{l.cacheHit ? 'Hit' : 'Miss'}{l.cacheClearedThisRun ? ' (cleared)' : ''}</span>
+          <span>GPU session</span><span className={l.gpuSessionInitialized ? styles.good : styles.muted}>{l.gpuSessionInitialized ? '✓' : '—'}</span>
+          <span>Smoke test</span><span className={l.smokeTestPassed ? styles.good : l.aboutToRunSmokeTest ? styles.warnText : styles.muted}>
+            {l.smokeTestPassed ? '✓ Passed' : l.aboutToRunSmokeTest ? '⏳ Running…' : '—'}
+          </span>
+          <span>Safe mode</span><span>{l.safeLoadMode ? 'ON' : 'OFF'}</span>
           {l.elapsedMs > 0 && <><span>Elapsed</span><span>{(l.elapsedMs / 1000).toFixed(1)}s</span></>}
         </div>
 
@@ -87,14 +96,10 @@ export function DebugPanel() {
           </>
         )}
 
-        {o.fallbackTriggered && (
-          <p className={styles.warnBox}><strong>Fallback</strong><br />{o.fallbackReason}</p>
-        )}
-
         <div className={styles.actions}>
           {isIdle && (
-            <button className={styles.actionBtn} onClick={() => loadModel()}>
-              {o.status === 'error' ? 'Retry' : 'Connect'}
+            <button className={styles.actionBtn} onClick={() => loadModel(safeLoadMode)}>
+              {o.status === 'error' ? 'Retry' : 'Connect'}{safeLoadMode ? ' (Safe)' : ''}
             </button>
           )}
           {o.status === 'error' && (
@@ -112,6 +117,15 @@ export function DebugPanel() {
         </div>
       </div>
 
+      {l.stageLog.length > 0 && (
+        <div className={styles.section}>
+          <h4 className={styles.sectionTitle}><Activity size={12} /> Stage Log</h4>
+          <div className={styles.logBox}>
+            {l.stageLog.map((line, i) => <div key={i}>{line}</div>)}
+          </div>
+        </div>
+      )}
+
       {o.status === 'error' && o.error && (
         <div className={styles.section}>
           <h4 className={styles.sectionTitle}><AlertTriangle size={12} /> Error</h4>
@@ -127,7 +141,6 @@ export function DebugPanel() {
               {metrics.generationSource === 'step' ? (o.activeModel?.displayName ?? 'Model') : 'Unavailable'}
             </span>
             <span>Latency</span><span>{metrics.totalLatencyMs?.toFixed(0) ?? '–'} ms</span>
-            <span>Tokens</span><span>{metrics.promptTokens}</span>
           </div>
         </div>
       )}

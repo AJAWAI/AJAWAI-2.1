@@ -15,7 +15,7 @@ interface ModelState {
   capabilitiesLoading: boolean;
 
   detectCapabilities: () => Promise<void>;
-  loadModel: () => Promise<void>;
+  loadModel: (safeMode?: boolean) => Promise<void>;
   unloadModel: () => Promise<void>;
   initSubscription: () => () => void;
 }
@@ -31,7 +31,7 @@ export const useModelStore = create<ModelState>((set) => ({
     set({ capabilities, capabilitiesLoading: false });
   },
 
-  loadModel: async () => { await connect(); },
+  loadModel: async (safeMode?: boolean) => { await connect(safeMode); },
   unloadModel: async () => { await disconnect(); },
 
   initSubscription: () => {
