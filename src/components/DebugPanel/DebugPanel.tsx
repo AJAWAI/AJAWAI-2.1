@@ -3,6 +3,7 @@ import { useSettingsStore } from '../../store/settingsStore';
 import { useModelStore } from '../../store/modelStore';
 import { useChatStore } from '../../store/chatStore';
 import { ALL_MODELS } from '../../ai/runtime/modelRegistry';
+import { clearModelCache } from '../../ai/runtime/modelLoader';
 import styles from './DebugPanel.module.css';
 
 export function DebugPanel() {
@@ -37,15 +38,22 @@ export function DebugPanel() {
 
       <div className={styles.section}>
         <h4 className={styles.sectionTitle}><HardDrive size={12} /> Models</h4>
-        <div className={styles.grid}>
-          {ALL_MODELS.map((m) => (
-            <span key={m.modelId} style={{ gridColumn: '1 / -1' }}
-              className={o.activeModel?.modelId === m.modelId ? styles.good : styles.muted}>
+        {ALL_MODELS.map((m) => (
+          <div key={m.modelId} className={styles.artifactRow}>
+            <span className={o.activeModel?.modelId === m.modelId ? styles.good : styles.muted}>
               {o.activeModel?.modelId === m.modelId ? '▶ ' : '  '}
-              {m.displayName} ({m.quantization}, {m.estimatedRAM_GB} GB, {m.role})
+              {m.displayName}
             </span>
-          ))}
-        </div>
+            {' '}
+            <span className={styles.muted}>
+              {m.quantization} · {m.estimatedRAM_GB}GB · {m.role}
+              {m.browserReady
+                ? <span className={styles.good}> · browser-ready</span>
+                : <span className={styles.errorText}> · browser-unavailable</span>
+              }
+            </span>
+          </div>
+        ))}
       </div>
 
       <div className={styles.section}>
@@ -55,23 +63,28 @@ export function DebugPanel() {
           <span className={o.status === 'ready' ? styles.good : undefined}>
             {o.activeModel?.displayName ?? 'None'}
           </span>
-          <span>Status</span>
+          <span>Stage</span>
           <span data-status={o.status} className={styles.statusBadge}>
             {isLoading && <Loader size={10} className={styles.spin} />}
-            {o.status}
+            {l.stage !== 'idle' ? l.stage : o.status}
           </span>
-          {l.modelPackage && <><span>Package</span><span className={styles.muted}>{l.modelPackage}</span></>}
+          {l.loaderKind && <><span>Loader</span><span>{l.loaderKind}</span></>}
           {l.runtime && <><span>Runtime</span><span>{l.runtime}</span></>}
-          <span>Cache v{l.cacheVersion}</span><span>{l.cached ? 'Hit' : 'Miss'}</span>
-          <span>Smoke test</span><span className={l.smokeTestPassed ? styles.good : styles.muted}>{l.smokeTestPassed ? 'Passed' : '—'}</span>
-          {o.visionDisabled && <><span>Vision</span><span className={styles.muted}>Disabled</span></>}
+          {l.modelPackage && <><span>Package</span><span className={styles.muted}>{l.modelPackage}</span></>}
+          <span>Cache v{l.cacheVersion}</span><span>{l.cacheHit ? 'Hit' : 'Miss (fresh)'}</span>
+          <span>Smoke test</span><span className={l.smokeTestPassed ? styles.good : styles.muted}>{l.smokeTestPassed ? '✓ Passed' : '—'}</span>
           {l.elapsedMs > 0 && <><span>Elapsed</span><span>{(l.elapsedMs / 1000).toFixed(1)}s</span></>}
         </div>
 
-        {isLoading && l.progress > 0 && l.progress < 1 && (
-          <div className={styles.progressBar}>
-            <div className={styles.progressFill} style={{ width: `${(l.progress * 100).toFixed(1)}%` }} />
-          </div>
+        {isLoading && l.combinedProgress > 0 && l.combinedProgress < 1 && (
+          <>
+            <div className={styles.progressBar}>
+              <div className={styles.progressFill} style={{ width: `${(l.combinedProgress * 100).toFixed(1)}%` }} />
+            </div>
+            <p className={styles.muted} style={{ fontSize: 10, marginTop: 2 }}>
+              Tokenizer: {(l.tokenizerProgress * 100).toFixed(0)}% · Model: {(l.modelProgress * 100).toFixed(0)}%
+            </p>
+          </>
         )}
 
         {o.fallbackTriggered && (
@@ -85,7 +98,13 @@ export function DebugPanel() {
             </button>
           )}
           {o.status === 'error' && (
-            <button className={styles.actionBtnSecondary} onClick={unloadModel} style={{ marginLeft: 8 }}>Reset</button>
+            <>
+              <button className={styles.actionBtnSecondary} onClick={unloadModel} style={{ marginLeft: 8 }}>Reset</button>
+              <button className={styles.actionBtnSecondary} onClick={() => {
+                ALL_MODELS.forEach((m) => clearModelCache(m));
+                unloadModel();
+              }} style={{ marginLeft: 8 }}>Clear Cache</button>
+            </>
           )}
           {o.status === 'ready' && (
             <button className={styles.actionBtnSecondary} onClick={unloadModel}>Disconnect</button>
@@ -102,7 +121,7 @@ export function DebugPanel() {
 
       {metrics && (
         <div className={styles.section}>
-          <h4 className={styles.sectionTitle}><Brain size={12} /> Last Generation</h4>
+          <h4 className={styles.sectionTitle}><Brain size={12} /> Generation</h4>
           <div className={styles.grid}>
             <span>Source</span><span className={metrics.generationSource === 'step' ? styles.good : styles.warn}>
               {metrics.generationSource === 'step' ? (o.activeModel?.displayName ?? 'Model') : 'Unavailable'}
