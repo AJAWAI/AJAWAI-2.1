@@ -4,13 +4,14 @@ export interface ModelEntry {
   displayName: string;
   role: 'reasoning' | 'vision' | 'multimodal';
   quantization: string;
-  dtype: Record<string, string>;
+  dtype: string;
   device: 'webgpu' | 'wasm' | 'cpu';
   estimatedRAM_GB: number;
   downloadSize_GB: number;
   contextWindow: number;
   maxOutputTokens: number;
   supportsVision: boolean;
+  cacheVersion: number;
 }
 
 export const PHI35_Q4: ModelEntry = {
@@ -19,13 +20,14 @@ export const PHI35_Q4: ModelEntry = {
   displayName: 'Phi-3.5 Mini',
   role: 'reasoning',
   quantization: 'Q4F16',
-  dtype: { model: 'q4f16' },
+  dtype: 'q4f16',
   device: 'webgpu',
   estimatedRAM_GB: 2.5,
   downloadSize_GB: 2.3,
   contextWindow: 512,
   maxOutputTokens: 128,
   supportsVision: false,
+  cacheVersion: 2,
 };
 
 export const MOONDREAM_Q4: ModelEntry = {
@@ -34,13 +36,14 @@ export const MOONDREAM_Q4: ModelEntry = {
   displayName: 'Moondream2',
   role: 'vision',
   quantization: 'Q4F16',
-  dtype: { decoder: 'q4f16', vision_encoder: 'q4', embed_tokens: 'fp16' },
+  dtype: 'q4f16',
   device: 'webgpu',
   estimatedRAM_GB: 1.5,
   downloadSize_GB: 1.2,
   contextWindow: 512,
   maxOutputTokens: 128,
   supportsVision: true,
+  cacheVersion: 1,
 };
 
 export const STEP_Q4: ModelEntry = {
@@ -49,13 +52,14 @@ export const STEP_Q4: ModelEntry = {
   displayName: 'STEP-3-VL-10B',
   role: 'multimodal',
   quantization: 'Q4',
-  dtype: { model: 'q4' },
+  dtype: 'q4',
   device: 'webgpu',
   estimatedRAM_GB: 6.0,
   downloadSize_GB: 5.5,
   contextWindow: 1024,
   maxOutputTokens: 256,
   supportsVision: true,
+  cacheVersion: 1,
 };
 
 export const ALL_MODELS = [STEP_Q4, PHI35_Q4, MOONDREAM_Q4] as const;

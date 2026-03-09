@@ -60,7 +60,11 @@ export function DebugPanel() {
             {isLoading && <Loader size={10} className={styles.spin} />}
             {o.status}
           </span>
-          {o.visionDisabled && <><span>Vision</span><span className={styles.muted}>Disabled (low RAM)</span></>}
+          {l.modelPackage && <><span>Package</span><span className={styles.muted}>{l.modelPackage}</span></>}
+          {l.runtime && <><span>Runtime</span><span>{l.runtime}</span></>}
+          <span>Cache v{l.cacheVersion}</span><span>{l.cached ? 'Hit' : 'Miss'}</span>
+          <span>Smoke test</span><span className={l.smokeTestPassed ? styles.good : styles.muted}>{l.smokeTestPassed ? 'Passed' : '—'}</span>
+          {o.visionDisabled && <><span>Vision</span><span className={styles.muted}>Disabled</span></>}
           {l.elapsedMs > 0 && <><span>Elapsed</span><span>{(l.elapsedMs / 1000).toFixed(1)}s</span></>}
         </div>
 
