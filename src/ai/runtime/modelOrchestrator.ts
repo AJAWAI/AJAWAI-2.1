@@ -9,6 +9,7 @@ import {
   getLoaderState,
   subscribeLoader,
   type LoaderState,
+  emptyLoaderState,
 } from './modelLoader';
 
 export type OrchestratorStatus =
@@ -26,25 +27,19 @@ export interface OrchestratorState {
   activeModel: ModelEntry | null;
   reasoningModel: ModelEntry;
   visionModel: ModelEntry;
-  stepAvailable: boolean;
+  stepModel: ModelEntry;
   fallbackTriggered: boolean;
   fallbackReason: string | null;
   error: string | null;
   loader: LoaderState;
-  visionDisabled: boolean;
+  visionActive: boolean;
 }
-
-const INITIAL_LOADER: LoaderState = {
-  stage: 'idle', modelId: null, modelPackage: null, runtime: null,
-  progress: 0, error: null, cached: false, cacheVersion: 0,
-  smokeTestPassed: false, elapsedMs: 0,
-};
 
 let state: OrchestratorState = {
   status: 'idle', device: null, tier: null, activeModel: null,
-  reasoningModel: PHI35_Q4, visionModel: MOONDREAM_Q4,
-  stepAvailable: false, fallbackTriggered: false, fallbackReason: null,
-  error: null, loader: INITIAL_LOADER, visionDisabled: false,
+  reasoningModel: PHI35_Q4, visionModel: MOONDREAM_Q4, stepModel: STEP_Q4,
+  fallbackTriggered: false, fallbackReason: null,
+  error: null, loader: emptyLoaderState(), visionActive: false,
 };
 
 type Listener = (s: OrchestratorState) => void;
@@ -61,16 +56,6 @@ export function subscribeOrchestrator(fn: Listener) {
   return () => { subs.delete(fn); unsub(); };
 }
 
-async function tryLoad(entry: ModelEntry): Promise<boolean> {
-  try {
-    await loadModel(entry);
-    return true;
-  } catch {
-    await disposeActive();
-    return false;
-  }
-}
-
 export async function connect(): Promise<void> {
   state = { ...state, status: 'detecting', error: null, fallbackTriggered: false, fallbackReason: null };
   notify();
@@ -80,63 +65,52 @@ export async function connect(): Promise<void> {
   state = { ...state, device, tier };
 
   if (!device.hasWebGPU) {
-    state = { ...state, status: 'error', error: 'WebGPU not available. Requires Chrome 113+ or Edge with WebGPU flag enabled.' };
+    state = { ...state, status: 'error', error: 'WebGPU not available. Requires Chrome 113+ with WebGPU enabled.' };
     notify();
     return;
   }
 
-  state = { ...state, status: 'loading' };
+  state = { ...state, status: 'loading', activeModel: PHI35_Q4 };
   notify();
 
-  if (tier === 'high') {
-    state.activeModel = STEP_Q4;
-    notify();
-    if (await tryLoad(STEP_Q4)) {
-      state = { ...state, status: 'ready', activeModel: STEP_Q4, stepAvailable: true };
-      notify();
-      return;
-    }
-    state = { ...state, fallbackTriggered: true, fallbackReason: `STEP failed: ${getLoaderState().error}` };
-    notify();
-  }
-
-  if (tier === 'low') state.visionDisabled = true;
-
-  state.activeModel = PHI35_Q4;
-  notify();
-  if (await tryLoad(PHI35_Q4)) {
+  try {
+    await loadModel(PHI35_Q4);
     state = { ...state, status: 'ready', activeModel: PHI35_Q4 };
     notify();
-    return;
+  } catch (e) {
+    state = {
+      ...state, status: 'error', activeModel: null,
+      error: `${PHI35_Q4.displayName}: ${e instanceof Error ? e.message : String(e)}`,
+    };
+    notify();
   }
-
-  state = { ...state, status: 'error', error: `${PHI35_Q4.displayName}: ${getLoaderState().error}` };
-  notify();
 }
 
 export async function switchToVision(): Promise<boolean> {
-  if (state.visionDisabled) return false;
+  if (!MOONDREAM_Q4.browserReady) return false;
   state = { ...state, status: 'switching', activeModel: MOONDREAM_Q4 };
   notify();
-  if (await tryLoad(MOONDREAM_Q4)) {
-    state = { ...state, status: 'ready', activeModel: MOONDREAM_Q4 };
+  try {
+    await loadModel(MOONDREAM_Q4);
+    state = { ...state, status: 'ready', activeModel: MOONDREAM_Q4, visionActive: true };
     notify();
     return true;
+  } catch {
+    state = { ...state, status: 'loading', activeModel: PHI35_Q4 };
+    notify();
+    try { await loadModel(PHI35_Q4); } catch { /* */ }
+    state = { ...state, status: 'ready', visionActive: false };
+    notify();
+    return false;
   }
-  state = { ...state, status: 'loading', activeModel: PHI35_Q4 };
-  notify();
-  await tryLoad(PHI35_Q4);
-  state = { ...state, status: 'ready' };
-  notify();
-  return false;
 }
 
 export async function switchToReasoning(): Promise<void> {
   if (getActiveModelId() === PHI35_Q4.modelId) return;
   state = { ...state, status: 'switching', activeModel: PHI35_Q4 };
   notify();
-  await tryLoad(PHI35_Q4);
-  state = { ...state, status: 'ready', activeModel: PHI35_Q4 };
+  try { await loadModel(PHI35_Q4); } catch { /* */ }
+  state = { ...state, status: 'ready', activeModel: PHI35_Q4, visionActive: false };
   notify();
 }
 
@@ -145,8 +119,8 @@ export async function disconnect(): Promise<void> {
   state = {
     status: 'idle', device: state.device, tier: state.tier,
     activeModel: null, reasoningModel: PHI35_Q4, visionModel: MOONDREAM_Q4,
-    stepAvailable: false, fallbackTriggered: false, fallbackReason: null,
-    error: null, loader: INITIAL_LOADER, visionDisabled: false,
+    stepModel: STEP_Q4, fallbackTriggered: false, fallbackReason: null,
+    error: null, loader: emptyLoaderState(), visionActive: false,
   };
   notify();
 }
@@ -156,17 +130,17 @@ export async function generate(prompt: string, maxTokens: number = 128): Promise
   const tokenizer = getActiveTokenizer();
   if (!model || !tokenizer) throw new Error('No model loaded');
 
-  let formattedPrompt = prompt;
+  let formatted = prompt;
   if (tokenizer.apply_chat_template) {
     try {
-      formattedPrompt = tokenizer.apply_chat_template(
+      formatted = tokenizer.apply_chat_template(
         [{ role: 'user', content: prompt }],
         { add_generation_prompt: true, tokenize: false },
       );
-    } catch { /* use raw prompt */ }
+    } catch { /* use raw */ }
   }
 
-  const inputs = tokenizer.encode(formattedPrompt, { add_special_tokens: true });
+  const inputs = tokenizer.encode(formatted, { add_special_tokens: true });
   const output = await model.generate({
     input_ids: inputs.input_ids,
     max_new_tokens: maxTokens,
@@ -175,9 +149,7 @@ export async function generate(prompt: string, maxTokens: number = 128): Promise
   });
   const text = tokenizer.decode(output, { skip_special_tokens: true });
 
-  const idx = text.indexOf(prompt);
-  if (idx >= 0) {
-    return text.slice(idx + prompt.length).trim();
-  }
+  const promptEnd = text.lastIndexOf(prompt);
+  if (promptEnd >= 0) return text.slice(promptEnd + prompt.length).trim();
   return text.trim();
 }

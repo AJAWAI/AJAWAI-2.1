@@ -45,7 +45,7 @@ export function SettingsPanel() {
           <div className={styles.configGrid}>
             <span>Runtime</span><span>Transformers.js + WebGPU</span>
             <span>Reasoning</span><span>Phi-3.5 Mini</span>
-            <span>Vision</span><span>{orch.visionDisabled ? 'Disabled' : 'Moondream2'}</span>
+            <span>Vision</span><span>{orch.visionActive ? 'Moondream2 (active)' : 'Moondream2 (standby)'}</span>
             <span>Generation</span><span>Single-pass</span>
             <span>Selection</span><span>Automatic by device</span>
           </div>

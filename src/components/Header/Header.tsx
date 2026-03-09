@@ -12,7 +12,7 @@ export function Header() {
   let badge: string;
   if (orch.status === 'ready') badge = orch.activeModel?.displayName ?? 'Ready';
   else if (orch.status === 'loading' || orch.status === 'switching') {
-    const p = orch.loader.progress;
+    const p = orch.loader.combinedProgress;
     badge = p > 0 && p < 1 ? `${(p * 100).toFixed(0)}%` : 'Loading…';
   }
   else if (orch.status === 'error') badge = 'Error';
