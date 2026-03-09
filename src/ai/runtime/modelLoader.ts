@@ -138,17 +138,39 @@ function markCacheValid(entry: ModelEntry) {
 }
 
 export async function clearModelCache(entry: ModelEntry): Promise<void> {
+  const modelId = entry.modelId;
+  log(`Clearing cache for ${modelId}...`);
+  
+  // 1. Clear localStorage version marker
   invalidateCache(entry);
+  
+  // 2. Aggressively clear all relevant browser caches
   try {
     const keys = await globalThis.caches?.keys();
     if (keys) {
+      let cleared = 0;
       for (const name of keys) {
-        if (name.includes('transformers') || name.includes('onnx')) {
+        // Clear any cache that might contain model artifacts
+        if (
+          name.includes('transformers') ||
+          name.includes('onnx') ||
+          name.includes('hf') ||  // HuggingFace
+          name.includes('model') ||
+          name.includes(entry.hfId.split('/')[0]) || // Clear by org name (onnx-community)
+          name.includes('ajawai')
+        ) {
           await globalThis.caches.delete(name);
+          cleared++;
         }
       }
+      log(`Cleared ${cleared} caches`);
     }
-  } catch { /* */ }
+  } catch (e) {
+    log(`Cache clear error: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  
+  // 3. Force reload to ensure clean state
+  log(`Cache cleared for ${modelId} - reload may be needed`);
 }
 
 async function ensureTransformers(): Promise<TransformersModule> {
@@ -224,6 +246,16 @@ async function loadPhiTextWebGPU(entry: ModelEntry, safeMode: boolean): Promise<
   setStage('pre-smoke-delay', `Waiting ${delayMs}ms before smoke test (safe=${safeMode})`);
   await new Promise((r) => setTimeout(r, delayMs));
 
+  // Skip smoke test in safe mode - let first user message be the live readiness test
+  // This prevents mobile browser crashes from inference memory spike
+  if (safeMode) {
+    loaderState.smokeTestPassed = false; // Not passed, just skipped
+    log('Smoke test SKIPPED in safe mode - first user prompt will be live test');
+    loaderState.lastSuccessfulStage = 'pre-smoke-delay';
+    notify();
+    return;
+  }
+
   loaderState.aboutToRunSmokeTest = true;
   setStage('smoke-test', 'Running smoke test: generate 1 token from "Hi"');
 
@@ -235,7 +267,18 @@ async function loadPhiTextWebGPU(entry: ModelEntry, safeMode: boolean): Promise<
       max_new_tokens: 1,
       do_sample: false,
     });
-    const decoded = activeTokenizer.decode(output, { skip_special_tokens: true });
+    
+    // Handle Tensor output from Transformers.js ONNX
+    let outputArray: unknown[];
+    if (output && typeof output === 'object' && 'tolist' in output && typeof (output as { tolist: () => unknown }).tolist === 'function') {
+      outputArray = (output as { tolist: () => unknown[] }).tolist();
+    } else if (Array.isArray(output)) {
+      outputArray = output;
+    } else {
+      throw new Error(`Unexpected generate() output type: ${typeof output}`);
+    }
+    
+    const decoded = activeTokenizer.decode(outputArray, { skip_special_tokens: true });
     log(`Smoke test output: "${decoded.slice(0, 40)}"`);
     if (!decoded || decoded.length === 0) throw new Error('Smoke test produced empty output');
     loaderState.smokeTestPassed = true;
@@ -303,5 +346,16 @@ export async function loadModel(entry: ModelEntry, safeMode: boolean = false): P
 
   setStage('ready', `${entry.displayName} ready`);
   markCacheValid(entry);
+  
+  // Final detailed logging for debugging
+  log(`===== LOAD COMPLETE =====`);
+  log(`Model: ${entry.displayName} (${entry.modelId})`);
+  log(`Quantization: ${entry.quantization} | Est. RAM: ${entry.estimatedRAM_GB}GB`);
+  log(`Safe mode: ${safeMode} | Smoke test: ${safeMode ? 'SKIPPED' : loaderState.smokeTestPassed ? 'PASSED' : 'FAILED'}`);
+  log(`GPU Session: ${loaderState.gpuSessionInitialized ? 'INITIALIZED' : 'NOT INITIALIZED'}`);
+  log(`Total load time: ${((loaderState.elapsedMs || 0) / 1000).toFixed(2)}s`);
+  log(`Browser memory: Check DevTools Performance tab`);
+  log(`==========================`);
+  
   notify();
 }

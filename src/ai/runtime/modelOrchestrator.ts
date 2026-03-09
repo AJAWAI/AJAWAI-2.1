@@ -131,12 +131,14 @@ export async function generate(prompt: string, maxTokens: number = 128): Promise
   if (!model || !tokenizer) throw new Error('No model loaded');
 
   let formatted = prompt;
+  let hasChatTemplate = false;
   if (tokenizer.apply_chat_template) {
     try {
       formatted = tokenizer.apply_chat_template(
         [{ role: 'user', content: prompt }],
         { add_generation_prompt: true, tokenize: false },
       );
+      hasChatTemplate = true;
     } catch { /* use raw */ }
   }
 
@@ -147,8 +149,26 @@ export async function generate(prompt: string, maxTokens: number = 128): Promise
     do_sample: true,
     temperature: 0.7,
   });
-  const text = tokenizer.decode(output, { skip_special_tokens: true });
+  
+  // Transformers.js ONNX can return Tensor or plain array - handle both
+  let outputArray: unknown[];
+  if (output && typeof output === 'object' && 'tolist' in output && typeof (output as { tolist: () => unknown }).tolist === 'function') {
+    outputArray = (output as { tolist: () => unknown[] }).tolist();
+  } else if (Array.isArray(output)) {
+    outputArray = output;
+  } else {
+    throw new Error(`Unexpected generate() output type: ${typeof output}`);
+  }
+  
+  const text = tokenizer.decode(outputArray, { skip_special_tokens: true });
 
+  // If chat template was applied, return the full response (don't try to slice out prompt)
+  // The model outputs only the assistant response after the template
+  if (hasChatTemplate) {
+    return text.trim();
+  }
+  
+  // Fallback: try to find and slice the prompt for raw prompts
   const promptEnd = text.lastIndexOf(prompt);
   if (promptEnd >= 0) return text.slice(promptEnd + prompt.length).trim();
   return text.trim();
