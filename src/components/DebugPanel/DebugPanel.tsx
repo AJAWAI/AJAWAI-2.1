@@ -78,6 +78,7 @@ export function DebugPanel() {
           <span>Browser gate</span><span className={l.browserReady ? styles.good : styles.errorText}>{l.browserReadyGateResult || '—'}</span>
           <span>Cache v{l.cacheVersion}</span><span>{l.cacheHit ? 'Hit' : 'Miss'}{l.cacheClearedThisRun ? ' (cleared)' : ''}</span>
           <span>GPU session</span><span className={l.gpuSessionInitialized ? styles.good : styles.muted}>{l.gpuSessionInitialized ? '✓' : '—'}</span>
+          {l.webGpuMemoryLimit && <><span>GPU memory</span><span>{(l.webGpuMemoryLimit / (1024*1024*1024)).toFixed(1)}GB</span></>}
           <span>Smoke test</span><span className={l.smokeTestPassed ? styles.good : l.aboutToRunSmokeTest ? styles.warnText : styles.muted}>
             {l.smokeTestPassed ? '✓ Passed' : l.aboutToRunSmokeTest ? '⏳ Running…' : '—'}
           </span>

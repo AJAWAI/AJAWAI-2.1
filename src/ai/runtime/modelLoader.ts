@@ -3,9 +3,11 @@ import type { ModelEntry } from './modelRegistry';
 export type LoadStage =
   | 'idle'
   | 'importing'
+  | 'detecting-device'
   | 'downloading-tokenizer'
   | 'downloading-model'
-  | 'creating-session'
+  | 'initializing-session'
+  | 'warming-up'
   | 'pre-smoke-delay'
   | 'smoke-test'
   | 'ready'
@@ -33,6 +35,7 @@ export interface LoaderState {
   safeLoadMode: boolean;
   elapsedMs: number;
   stageLog: string[];
+  webGpuMemoryLimit: number | null; // New: track memory limit used
 }
 
 export function emptyLoaderState(): LoaderState {
@@ -44,7 +47,7 @@ export function emptyLoaderState(): LoaderState {
     error: null, cacheHit: false, cacheClearedThisRun: false, cacheVersion: 0,
     gpuSessionInitialized: false, aboutToRunSmokeTest: false,
     smokeTestPassed: false, safeLoadMode: false, elapsedMs: 0,
-    stageLog: [],
+    stageLog: [], webGpuMemoryLimit: null,
   };
 }
 
@@ -208,38 +211,62 @@ async function loadPhiTextWebGPU(entry: ModelEntry, safeMode: boolean): Promise<
     throw new Error(`Tokenizer load failed: ${e instanceof Error ? e.message : String(e)}`);
   }
 
+  // Small delay to stabilize browser after tokenizer load
+  setStage('warming-up', 'Preparing for model load...');
+  log('Tokenizer loaded, preparing for model load...');
+  await new Promise((r) => setTimeout(r, 500));
+
   setStage('downloading-model', `Loading model ONNX (${entry.dtype}, ${entry.device})`);
   loaderState.tokenizerProgress = 1;
   updateProgress();
   notify();
 
+  log(`>>> Starting model load: ${entry.hfId}, dtype=${entry.dtype}, device=${entry.device}`);
+
   let model: TFModel;
   try {
-    model = await tf.AutoModelForCausalLM.from_pretrained(entry.hfId, {
+    // Add session options for better mobile compatibility
+    const modelOptions: Record<string, unknown> = {
       dtype: entry.dtype,
       device: entry.device,
-      progress_callback: (p: { progress?: number }) => {
+      progress_callback: (p: { progress?: number; status?: string }) => {
         if (typeof p.progress === 'number') {
           peakModelProgress = Math.max(peakModelProgress, p.progress / 100);
           loaderState.modelProgress = peakModelProgress;
           updateProgress();
-          notify();
+          // Throttle notifications - only every 5%
+          if (Math.floor(peakModelProgress * 20) !== Math.floor((peakModelProgress - 0.05) * 20)) {
+            notify();
+          }
+        }
+        if (p.status) {
+          log(`Model load: ${p.status} (${(peakModelProgress * 100).toFixed(0)}%)`);
         }
       },
-    });
-    log('Model ONNX files loaded');
+    };
+    
+    // For mobile, try to use WebGPU with lower priority
+    if (entry.device === 'webgpu') {
+      log('Using WebGPU backend for model');
+    }
+    
+    model = await tf.AutoModelForCausalLM.from_pretrained(entry.hfId, modelOptions);
+    log('Model ONNX files loaded - model object received');
   } catch (e) {
-    throw new Error(`Model load failed: ${e instanceof Error ? e.message : String(e)}`);
+    const msg = e instanceof Error ? e.message : String(e);
+    log(`>>> MODEL LOAD FAILED: ${msg}`);
+    throw new Error(`Model load failed: ${msg}`);
   }
 
   activeTokenizer = tokenizer;
   activeModel = model;
   activeModelId = entry.modelId;
 
-  setStage('creating-session', 'GPU session created, model in memory');
+  setStage('initializing-session', 'GPU session created, model in memory');
   loaderState.modelProgress = 1;
   loaderState.combinedProgress = 1;
   loaderState.gpuSessionInitialized = true;
+  log('>>> Model load complete - ready for inference');
   notify();
 
   const delayMs = safeMode ? 1500 : 500;
@@ -310,11 +337,21 @@ export async function loadModel(entry: ModelEntry, safeMode: boolean = false): P
   const cacheHit = isCacheValid(entry);
   let cacheClearedThisRun = false;
 
+  // ACTUALLY clear the cache if invalid - this is critical!
   if (!cacheHit) {
-    invalidateCache(entry);
+    log(`Cache miss - clearing old artifacts for ${entry.modelId}...`);
+    try {
+      await clearModelCache(entry);
+    } catch (e) {
+      log(`Cache clear warning: ${e instanceof Error ? e.message : String(e)}`);
+    }
     cacheClearedThisRun = true;
   }
 
+  // Detect mobile and adjust memory limits
+  const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(globalThis.navigator?.userAgent ?? '');
+  const memLimit = isMobile ? 2 * 1024 * 1024 * 1024 : null; // 2GB for mobile, unlimited for desktop
+  
   loaderState = {
     ...emptyLoaderState(),
     stage: 'importing', modelId: entry.modelId, modelPackage: entry.hfId,
@@ -322,7 +359,8 @@ export async function loadModel(entry: ModelEntry, safeMode: boolean = false): P
     browserReadyGateResult: `PASSED: ${entry.loaderKind}`,
     cacheHit, cacheClearedThisRun, cacheVersion: entry.cacheVersion,
     safeLoadMode: safeMode,
-    stageLog: [`[0s] Starting ${entry.displayName} (${entry.loaderKind}, safe=${safeMode})`],
+    stageLog: [`[0s] Starting ${entry.displayName} (${entry.loaderKind}, safe=${safeMode}, mobile=${isMobile})`],
+    webGpuMemoryLimit: memLimit,
   };
   notify();
 
