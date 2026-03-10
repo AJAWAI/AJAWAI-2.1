@@ -77,12 +77,17 @@ export function DebugPanel() {
           {l.modelPackage && <><span>Package</span><span className={styles.muted}>{l.modelPackage}</span></>}
           <span>Browser gate</span><span className={l.browserReady ? styles.good : styles.errorText}>{l.browserReadyGateResult || '—'}</span>
           <span>Cache v{l.cacheVersion}</span><span>{l.cacheHit ? 'Hit' : 'Miss'}{l.cacheClearedThisRun ? ' (cleared)' : ''}</span>
+          <span>Tokenizer</span><span className={l.tokenizerDownloaded ? styles.good : styles.muted}>{l.tokenizerDownloaded ? '✓' : `${(l.tokenizerProgress * 100).toFixed(0)}%`}</span>
+          <span>Model</span><span className={l.modelDownloaded ? styles.good : styles.muted}>{l.modelDownloaded ? '✓' : `${(l.modelProgress * 100).toFixed(0)}%`}</span>
+          <span>Persisted</span><span className={l.modelPersisted ? styles.good : styles.warnText}>{l.modelPersisted ? '✓' : l.modelDownloaded ? '?' : '—'}</span>
           <span>GPU session</span><span className={l.gpuSessionInitialized ? styles.good : styles.muted}>{l.gpuSessionInitialized ? '✓' : '—'}</span>
           {l.webGpuMemoryLimit && <><span>GPU memory</span><span>{(l.webGpuMemoryLimit / (1024*1024*1024)).toFixed(1)}GB</span></>}
           <span>Smoke test</span><span className={l.smokeTestPassed ? styles.good : l.aboutToRunSmokeTest ? styles.warnText : styles.muted}>
             {l.smokeTestPassed ? '✓ Passed' : l.aboutToRunSmokeTest ? '⏳ Running…' : '—'}
           </span>
           <span>Safe mode</span><span>{l.safeLoadMode ? 'ON' : 'OFF'}</span>
+          {l.storageEstimate && <><span>Storage</span><span>{((l.storageEstimate.used || 0) / 1024 / 1024).toFixed(0)}MB / {((l.storageEstimate.quota || 0) / 1024 / 1024).toFixed(0)}MB</span></>}
+          {l.persistenceGranted !== null && <><span>Persist</span><span className={l.persistenceGranted ? styles.good : styles.errorText}>{l.persistenceGranted ? '✓' : '✗'}</span></>}
           {l.elapsedMs > 0 && <><span>Elapsed</span><span>{(l.elapsedMs / 1000).toFixed(1)}s</span></>}
         </div>
 

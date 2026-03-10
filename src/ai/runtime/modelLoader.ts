@@ -4,8 +4,12 @@ export type LoadStage =
   | 'idle'
   | 'importing'
   | 'detecting-device'
+  | 'requesting-persistence'
+  | 'checking-storage'
   | 'downloading-tokenizer'
+  | 'tokenizer-ready'
   | 'downloading-model'
+  | 'model-loaded'
   | 'initializing-session'
   | 'warming-up'
   | 'pre-smoke-delay'
@@ -23,7 +27,10 @@ export interface LoaderState {
   browserReady: boolean;
   browserReadyGateResult: string;
   tokenizerProgress: number;
+  tokenizerDownloaded: boolean;
   modelProgress: number;
+  modelDownloaded: boolean;
+  modelPersisted: boolean;
   combinedProgress: number;
   error: string | null;
   cacheHit: boolean;
@@ -35,7 +42,9 @@ export interface LoaderState {
   safeLoadMode: boolean;
   elapsedMs: number;
   stageLog: string[];
-  webGpuMemoryLimit: number | null; // New: track memory limit used
+  webGpuMemoryLimit: number | null;
+  storageEstimate: { used: number | null; quota: number | null } | null;
+  persistenceGranted: boolean | null;
 }
 
 export function emptyLoaderState(): LoaderState {
@@ -43,13 +52,20 @@ export function emptyLoaderState(): LoaderState {
     stage: 'idle', lastSuccessfulStage: 'idle',
     modelId: null, modelPackage: null, loaderKind: null,
     runtime: null, browserReady: false, browserReadyGateResult: '',
-    tokenizerProgress: 0, modelProgress: 0, combinedProgress: 0,
+    tokenizerProgress: 0, tokenizerDownloaded: false,
+    modelProgress: 0, modelDownloaded: false, modelPersisted: false,
+    combinedProgress: 0,
     error: null, cacheHit: false, cacheClearedThisRun: false, cacheVersion: 0,
     gpuSessionInitialized: false, aboutToRunSmokeTest: false,
     smokeTestPassed: false, safeLoadMode: false, elapsedMs: 0,
     stageLog: [], webGpuMemoryLimit: null,
+    storageEstimate: null, persistenceGranted: null,
   };
 }
+
+// Single-flight guard - prevent duplicate loads
+let loadInFlight = false;
+let loadInFlightModelId: string | null = null;
 
 const CACHE_KEY = 'ajawai_cache_v_';
 
@@ -110,6 +126,8 @@ export function getLoaderState(): LoaderState {
 export function getActiveModel(): TFModel | null { return activeModel; }
 export function getActiveTokenizer(): TFTokenizer | null { return activeTokenizer; }
 export function getActiveModelId(): string | null { return activeModelId; }
+export function isLoadInFlight(): boolean { return loadInFlight; }
+export function getLoadInFlightModelId(): string | null { return loadInFlightModelId; }
 
 export async function disposeActive(): Promise<void> {
   if (activeModel?.dispose) {
@@ -176,6 +194,32 @@ export async function clearModelCache(entry: ModelEntry): Promise<void> {
   log(`Cache cleared for ${modelId} - reload may be needed`);
 }
 
+// Storage estimation and persistence helpers
+async function getStorageEstimate(): Promise<{ used: number | null; quota: number | null }> {
+  try {
+    if (globalThis.navigator?.storage?.estimate) {
+      const estimate = await globalThis.navigator.storage.estimate();
+      return { used: estimate.usage || null, quota: estimate.quota || null };
+    }
+  } catch (e) {
+    log(`Storage estimate error: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  return { used: null, quota: null };
+}
+
+async function requestPersistence(): Promise<boolean> {
+  try {
+    if (globalThis.navigator?.storage?.persist) {
+      const granted = await globalThis.navigator.storage.persist();
+      log(`Persistence ${granted ? 'GRANTED' : 'DENIED'}`);
+      return granted;
+    }
+  } catch (e) {
+    log(`Persistence request error: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  return false;
+}
+
 async function ensureTransformers(): Promise<TransformersModule> {
   if (tfjs) return tfjs;
   log('Dynamic import @huggingface/transformers');
@@ -207,12 +251,17 @@ async function loadPhiTextWebGPU(entry: ModelEntry, safeMode: boolean): Promise<
       },
     });
     log('Tokenizer loaded successfully');
+    loaderState.tokenizerDownloaded = true;
   } catch (e) {
     throw new Error(`Tokenizer load failed: ${e instanceof Error ? e.message : String(e)}`);
   }
 
+  // Check storage after tokenizer
+  const afterTokenizerStorage = await getStorageEstimate();
+  log(`Storage AFTER tokenizer: ${((afterTokenizerStorage.used || 0) / 1024 / 1024).toFixed(1)}MB`);
+  
   // Small delay to stabilize browser after tokenizer load
-  setStage('warming-up', 'Preparing for model load...');
+  setStage('tokenizer-ready', 'Tokenizer ready, preparing model load...');
   log('Tokenizer loaded, preparing for model load...');
   await new Promise((r) => setTimeout(r, 500));
 
@@ -252,6 +301,7 @@ async function loadPhiTextWebGPU(entry: ModelEntry, safeMode: boolean): Promise<
     
     model = await tf.AutoModelForCausalLM.from_pretrained(entry.hfId, modelOptions);
     log('Model ONNX files loaded - model object received');
+    loaderState.modelDownloaded = true;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     log(`>>> MODEL LOAD FAILED: ${msg}`);
@@ -261,6 +311,20 @@ async function loadPhiTextWebGPU(entry: ModelEntry, safeMode: boolean): Promise<
   activeTokenizer = tokenizer;
   activeModel = model;
   activeModelId = entry.modelId;
+
+  // Check storage after model load - is it persisted?
+  const afterModelStorage = await getStorageEstimate();
+  const modelPersisted = (afterModelStorage.used || 0) > (loaderState.storageEstimate?.used || 0);
+  loaderState.modelPersisted = modelPersisted;
+  log(`Storage AFTER model: ${((afterModelStorage.used || 0) / 1024 / 1024).toFixed(1)}MB - persisted=${modelPersisted}`);
+  loaderState.storageEstimate = afterModelStorage;
+
+  setStage('model-loaded', 'Model loaded, initializing GPU session...');
+  log('>>> Model in memory, initializing GPU session...');
+  notify();
+  
+  // Give browser time to stabilize before GPU session init
+  await new Promise((r) => setTimeout(r, 300));
 
   setStage('initializing-session', 'GPU session created, model in memory');
   loaderState.modelProgress = 1;
@@ -318,6 +382,28 @@ async function loadPhiTextWebGPU(entry: ModelEntry, safeMode: boolean): Promise<
 }
 
 export async function loadModel(entry: ModelEntry, safeMode: boolean = false): Promise<void> {
+  // SINGLE-FLIGHT GUARD - prevent duplicate loads
+  if (loadInFlight && loadInFlightModelId === entry.modelId) {
+    log(`⚠️ Second load BLOCKED for ${entry.modelId} - load already in progress`);
+    throw new Error(`Load already in progress for ${entry.modelId}`);
+  }
+  if (loadInFlight) {
+    log(`⚠️ Second load BLOCKED - different model ${entry.modelId} while ${loadInFlightModelId} loading`);
+    throw new Error(`Load already in progress for ${loadInFlightModelId}`);
+  }
+  
+  loadInFlight = true;
+  loadInFlightModelId = entry.modelId;
+  
+  try {
+    await _loadModelInner(entry, safeMode);
+  } finally {
+    loadInFlight = false;
+    loadInFlightModelId = null;
+  }
+}
+
+async function _loadModelInner(entry: ModelEntry, safeMode: boolean): Promise<void> {
   if (!entry.browserReady) {
     const reason = `${entry.displayName} (${entry.loaderKind}) — not browser-ready. Reserved for future runtime.`;
     loaderState.browserReadyGateResult = `BLOCKED: ${reason}`;
@@ -352,6 +438,19 @@ export async function loadModel(entry: ModelEntry, safeMode: boolean = false): P
   const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(globalThis.navigator?.userAgent ?? '');
   const memLimit = isMobile ? 2 * 1024 * 1024 * 1024 : null; // 2GB for mobile, unlimited for desktop
   
+  // Get initial storage estimate
+  const initialStorage = await getStorageEstimate();
+  log(`Storage BEFORE load: ${((initialStorage.used || 0) / 1024 / 1024).toFixed(1)}MB / ${((initialStorage.quota || 0) / 1024 / 1024).toFixed(0)}MB`);
+  
+  // Request persistence BEFORE loading model
+  setStage('requesting-persistence', 'Requesting persistent storage...');
+  const persistenceGranted = await requestPersistence();
+  
+  // Check storage again
+  setStage('checking-storage', 'Checking storage availability...');
+  const preLoadStorage = await getStorageEstimate();
+  log(`Storage available: ${((preLoadStorage.quota || 0) / 1024 / 1024).toFixed(0)}MB quota, persistence=${persistenceGranted}`);
+  
   loaderState = {
     ...emptyLoaderState(),
     stage: 'importing', modelId: entry.modelId, modelPackage: entry.hfId,
@@ -361,6 +460,8 @@ export async function loadModel(entry: ModelEntry, safeMode: boolean = false): P
     safeLoadMode: safeMode,
     stageLog: [`[0s] Starting ${entry.displayName} (${entry.loaderKind}, safe=${safeMode}, mobile=${isMobile})`],
     webGpuMemoryLimit: memLimit,
+    storageEstimate: preLoadStorage,
+    persistenceGranted,
   };
   notify();
 
